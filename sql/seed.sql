@@ -16,10 +16,12 @@ TRUNCATE TABLE sys_user;
 SET FOREIGN_KEY_CHECKS = 1;
 
 -- 三个角色各一人（id 固定：1=客户 2=管理员 3=工程师，演示时好记）
+-- 密码统一是 123456，存的是它的 BCrypt 散列（数据库永不存明文）。
+-- 注意：BCrypt 每次加盐结果不同，这串散列是生成后固定写死的，checkpw 校验没问题
 INSERT INTO sys_user (id, username, password, role, real_name) VALUES
-  (1, 'hospital_it', '123456', 'CUSTOMER', '王信息(医院信息科)'),
-  (2, 'admin',       '123456', 'ADMIN',    '李运营(平台管理员)'),
-  (3, 'engineer_zh', '123456', 'ENGINEER', '张工(硬件工程师)');
+  (1, 'hospital_it', '$2a$10$WIW1rEIYMRonrCmeeQ5Rx.44PJpMrDyP2joYHR.H9F3aCn6BvOS1.', 'CUSTOMER', '王信息(医院信息科)'),
+  (2, 'admin',       '$2a$10$WIW1rEIYMRonrCmeeQ5Rx.44PJpMrDyP2joYHR.H9F3aCn6BvOS1.', 'ADMIN',    '李运营(平台管理员)'),
+  (3, 'engineer_zh', '$2a$10$WIW1rEIYMRonrCmeeQ5Rx.44PJpMrDyP2joYHR.H9F3aCn6BvOS1.', 'ENGINEER', '张工(硬件工程师)');
 
 -- 示范客户：医院只是 customer_type 的一种取值
 INSERT INTO customer (id, name, customer_type, contact_name, contact_phone, address) VALUES

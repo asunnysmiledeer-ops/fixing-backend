@@ -10,8 +10,8 @@ import java.time.LocalDateTime;
 /**
  * 系统用户实体，对应表 sys_user。
  *
- * <p>v0 不做登录认证（JWT/Session 都不上），调用接口时直接传 operatorId，
- * Service 拿它查出用户再做角色校验。真实登录留给 v1（M1 完整版）。
+ * <p>v0.2 起有真实登录：POST /auth/login 校验 BCrypt 密码后签发 JWT，
+ * AuthInterceptor 解析令牌把用户放进 UserContext，业务层从那里取操作人。
  */
 @Data
 @TableName("sys_user")
@@ -24,7 +24,7 @@ public class SysUser {
     /** 登录名，唯一 */
     private String username;
 
-    /** 密码。v0 用明文占位；上线前必须换成 BCrypt 散列 */
+    /** 密码的 BCrypt 散列（永不存明文；对外接口也永不返回该字段） */
     private String password;
 
     /** 角色：CUSTOMER / ADMIN / ENGINEER（MyBatis 默认按枚举名存取 VARCHAR 列） */

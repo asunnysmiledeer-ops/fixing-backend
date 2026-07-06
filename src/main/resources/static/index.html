@@ -22,10 +22,10 @@
 <header class="topbar">
   <div class="brand">🔧 FIX-ING <span class="brand-sub">通用设备维保平台 · Demo v0</span></div>
   <div class="identity">
-    <label>当前身份</label>
-    <!-- v0 没有登录：切换这个下拉框 = 换一个 operatorId 调接口。
-         不同身份看到的操作按钮不同（但真正的权限校验在后端，前端只是"少画几个按钮"） -->
-    <select id="userSelect"></select>
+    <!-- v0.2：身份来自登录态（/auth/me），不再是随便切的下拉框。
+         演示换角色 = 退出后用另一个演示账号登录 -->
+    <span id="whoami"></span>
+    <button class="btn btn-logout" onclick="logout()">退出</button>
   </div>
 </header>
 

@@ -15,9 +15,8 @@ import lombok.Data;
 @Data
 public class TicketCreateDTO {
 
-    /** 谁在报修（v0 无登录，显式传 operatorId；v1 从登录态取） */
-    @NotNull(message = "操作人不能为空")
-    private Long operatorId;
+    // 注意：这里没有 operatorId —— 操作人一律从登录态(UserContext)取。
+    // "我是谁"由服务端认定，客户端说了不算，这是认证后最重要的观念转变。
 
     @NotNull(message = "客户不能为空")
     private Long customerId;

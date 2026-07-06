@@ -33,16 +33,32 @@ const STATUS_META = {
 
 /**
  * 统一的 API 调用封装：
- * - 后端约定返回 { code, message, data }，code!=0 时抛出 message；
- * - 抛出的错误由调用处 catch 后 toast 展示（如"非法状态跳转"）。
+ * - 每个请求自动带上 Authorization: Bearer <token>（登录时存进 localStorage）；
+ * - 收到 401 = 未登录/令牌过期 → 清掉本地 token，踢回登录页；
+ * - 后端约定返回 { code, message, data }，code!=0 时抛出 message。
  */
 async function api(path, method = 'GET', body = null) {
   const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  const token = localStorage.getItem('fixing_token');
+  if (token) opts.headers['Authorization'] = 'Bearer ' + token;
   if (body) opts.body = JSON.stringify(body);
   const res = await fetch(path, opts);
+  if (res.status === 401) {
+    // 令牌无效/过期：本地登录态已没有意义，统一回登录页重新来
+    localStorage.removeItem('fixing_token');
+    location.href = '/login.html';
+    throw new Error('登录已过期');
+  }
   const json = await res.json();
   if (json.code !== 0) throw new Error(json.message);
   return json.data;
+}
+
+/** 退出登录：JWT 无状态，服务端没有会话可销毁 —— 删本地 token 即完成登出 */
+async function logout() {
+  try { await api('/auth/logout', 'POST'); } catch (e) { /* 忽略：反正要清 token */ }
+  localStorage.removeItem('fixing_token');
+  location.href = '/login.html';
 }
 
 /** 防 XSS：所有由用户输入回显的文本都先过这一道再拼 HTML */
@@ -79,21 +95,25 @@ function partName(id) { const p = parts.find(p => p.id === id); return p ? p.nam
 // ════════════════════════ 初始化 ════════════════════════
 
 async function init() {
-  // 四类基础数据并行拉取（互不依赖就并行，别串行等）
+  // 没有 token 直接去登录页（有 token 但过期的情况由 api() 的 401 分支兜底）
+  if (!localStorage.getItem('fixing_token')) {
+    location.href = '/login.html';
+    return;
+  }
+
+  // 先问后端"我是谁"（/auth/me），再并行拉四类基础数据
+  const me = await api('/auth/me');
+  // 后端 LoginVO 里叫 userId，前端统一成 id，跟 users 列表里的字段对齐
+  currentUser = { id: me.userId, username: me.username, realName: me.realName, role: me.role };
+
   [users, customers, equipments, parts] = await Promise.all([
     api('/users'), api('/customers'), api('/equipments'), api('/spare-parts'),
   ]);
 
-  // 身份下拉框：显示"姓名（角色）"
+  // 顶栏显示登录身份
   const roleCn = { CUSTOMER: '客户', ADMIN: '管理员', ENGINEER: '工程师' };
-  const sel = document.getElementById('userSelect');
-  sel.innerHTML = users.map(u =>
-    `<option value="${u.id}">${esc(u.realName)}（${roleCn[u.role]}）</option>`).join('');
-  sel.onchange = () => {
-    currentUser = users.find(u => u.id === Number(sel.value));
-    loadBoard(); // 换身份后刷新看板（按钮会跟着变）
-  };
-  currentUser = users[0];
+  document.getElementById('whoami').textContent =
+    `👤 ${currentUser.realName} · ${roleCn[currentUser.role]}`;
 
   // 页签切换：纯显示/隐藏，切到哪个面板就刷新哪个的数据
   document.querySelectorAll('.tab').forEach(tab => {
@@ -267,8 +287,8 @@ function renderActions(t) {
 async function doAction(ticketId, action, remarkInputId = null) {
   const remark = remarkInputId ? document.getElementById(remarkInputId)?.value : null;
   try {
-    await api(`/tickets/${ticketId}/${action}`, 'POST',
-      { operatorId: currentUser.id, remark: remark || null });
+    // 注意：请求体里没有"操作人"—— 我是谁由后端从登录令牌里认定
+    await api(`/tickets/${ticketId}/${action}`, 'POST', { remark: remark || null });
     toast(`${actionLabel(action)} 成功`);
     await openTicket(ticketId); // 重新拉详情：状态和按钮立即更新
     loadBoard();
@@ -280,8 +300,7 @@ async function doAssign(ticketId, action) {
   const engineerId = Number(document.getElementById('aEngineer').value);
   const remark = document.getElementById('aReassignReason')?.value;
   try {
-    await api(`/tickets/${ticketId}/${action}`, 'POST',
-      { operatorId: currentUser.id, engineerId, remark: remark || null });
+    await api(`/tickets/${ticketId}/${action}`, 'POST', { engineerId, remark: remark || null });
     toast(`${actionLabel(action)} 成功`);
     await openTicket(ticketId);
     loadBoard();
@@ -293,8 +312,7 @@ async function doUsePart(ticketId) {
   const partId = Number(document.getElementById('aPart').value);
   const qty = Number(document.getElementById('aQty').value);
   try {
-    await api(`/tickets/${ticketId}/use-part`, 'POST',
-      { operatorId: currentUser.id, partId, qty });
+    await api(`/tickets/${ticketId}/use-part`, 'POST', { partId, qty });
     toast('换件成功，已扣库存并记录领料流水');
     parts = await api('/spare-parts'); // 库存变了，刷新本地缓存
     await openTicket(ticketId);
@@ -322,7 +340,6 @@ function initCreateForm() {
     ev.preventDefault(); // 阻止浏览器默认提交刷新页面
     try {
       const t = await api('/tickets', 'POST', {
-        operatorId: currentUser.id,
         customerId: Number(cSel.value),
         equipmentId: eSel.value ? Number(eSel.value) : null,
         type: document.getElementById('fType').value,

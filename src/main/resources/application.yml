@@ -29,3 +29,12 @@ mybatis-plus:
 logging:
   level:
     com.fixing: debug
+
+# 业务自定义配置（前缀 fixing 与框架配置区分开）
+fixing:
+  jwt:
+    # JWT 签名密钥：HMAC-SHA256 要求 ≥32 字节。
+    # 生产环境必须用环境变量 JWT_SECRET 注入随机长串 —— 密钥泄露 = 任何人都能伪造任意身份的令牌
+    secret: ${JWT_SECRET:fixing-demo-secret-change-me-in-production-0123456789}
+    # 令牌有效期（小时），过期后需重新登录
+    expire-hours: 12

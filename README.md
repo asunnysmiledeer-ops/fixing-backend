@@ -11,6 +11,7 @@
 |---|---|---|
 | 框架 | Spring Boot 3.5（单模块） | v0 故意不上若依/多模块，先把三层架构亲手过一遍 |
 | 持久层 | MyBatis-Plus 3.5 + MySQL | `map-underscore-to-camel-case` 必开 |
+| 认证 | JWT (jjwt) + BCrypt + 自写拦截器 | 刻意不上完整 Spring Security，整条鉴权链可读可懂 |
 | 前端 | 纯静态 HTML + 原生 JS | 放 `resources/static/`，Spring Boot 直接托管，同源零跨域零构建；v1 再换 Vue/React |
 | 构建 | Maven，Java 17+ | |
 
@@ -27,20 +28,30 @@ mvn spring-boot:run
 # 3. 验证
 curl http://localhost:8080/ping   # → ok
 
-# 4. 打开网页前端（工单看板/报修/库存/台账，右上角切换身份演示三种角色）
-open http://localhost:8080
+# 4. 打开网页前端：先登录（三个演示账号一键填入），再进看板/报修/库存/台账
+open http://localhost:8080/login.html
 
 # 5. 或者用脚本一键跑完整演示链（含反面用例）
 bash scripts/demo-flow.sh
 ```
 
-演示账号（seed 数据，v0 无登录，调接口时传 `operatorId`）：
+演示账号（seed 数据，密码均为 `123456`，库里存 BCrypt 散列）：
 
-| id | 角色 | 说明 |
+| 用户名 | 角色 | 说明 |
 |---|---|---|
-| 1 | CUSTOMER | 医院信息科（报修/确认/驳回） |
-| 2 | ADMIN | 平台管理员（派单/改派/取消） |
-| 3 | ENGINEER | 硬件工程师（接单/换件/完工） |
+| hospital_it | CUSTOMER | 医院信息科（报修/确认/驳回） |
+| admin | ADMIN | 平台管理员（派单/改派/取消） |
+| engineer_zh | ENGINEER | 硬件工程师（接单/换件/完工） |
+
+## 认证（v0.2）
+
+`POST /auth/login {username, password}` → 返回 JWT；之后所有业务接口都要带
+`Authorization: Bearer <token>` 请求头，缺失/过期/伪造一律 401。
+
+- 操作人身份一律从令牌认定（请求体里没有 operatorId）——"我是谁"客户端说了不算
+- 密码只存 BCrypt 散列；登录失败不区分"用户名错还是密码错"
+- 鉴权链路：`AuthInterceptor`(验签+查用户) → `UserContext`(ThreadLocal) → Service 取操作人
+- JWT 密钥从环境变量 `JWT_SECRET` 注入（本地有开发默认值）
 
 ## 工单状态机（系统的灵魂）
 
@@ -59,13 +70,15 @@ bash scripts/demo-flow.sh
 
 | 方法 | 路径 | 谁能调 | 说明 |
 |---|---|---|---|
+| POST | `/auth/login` | 公开 | 登录换 JWT（唯一不需要令牌的业务接口） |
+| GET | `/auth/me` | 已登录 | 当前用户信息（前端刷新恢复登录态） |
 | POST | `/tickets` | 客户/管理员 | 提交报修（优先级由规则自动判定） |
 | GET | `/tickets/{id}` · `/tickets/{id}/logs` | 所有人 | 详情 / 流转时间线 |
 | GET | `/tickets?status=&priority=&engineerId=&customerId=` | 所有人 | 列表筛选 |
-| POST | `/tickets/{id}/assign` | 管理员 | 派单 `{operatorId, engineerId}` |
+| POST | `/tickets/{id}/assign` | 管理员 | 派单 `{engineerId}` |
 | POST | `/tickets/{id}/reassign` | 管理员 | 改派/超时重派 |
 | POST | `/tickets/{id}/accept` | 被派工程师 | 接单 |
-| POST | `/tickets/{id}/use-part` | 责任工程师 | 换件扣库存 `{operatorId, partId, qty}` |
+| POST | `/tickets/{id}/use-part` | 责任工程师 | 换件扣库存 `{partId, qty}` |
 | POST | `/tickets/{id}/complete` | 责任工程师 | 完工提交 |
 | POST | `/tickets/{id}/confirm` / `reject` | 客户 | 确认 / 驳回返工 |
 | POST | `/tickets/{id}/cancel` | 客户(仅待派单)/管理员 | 取消 |
@@ -80,7 +93,8 @@ bash scripts/demo-flow.sh
 ```
 com.fixing
  ├─ common/      统一返回 Result、业务异常、全局异常处理
- ├─ user/        用户与角色（v0 简版：一个 role 字段，无登录）
+ ├─ auth/        登录认证：JwtUtil / AuthInterceptor / UserContext / AuthController
+ ├─ user/        用户与角色（一个 role 字段的简版 RBAC）
  ├─ customer/    客户台账（M2）
  ├─ equipment/   设备台账 + 维修历史（M2）
  ├─ inventory/   备件库存 + 领料流水（M8）：原子扣减
@@ -101,11 +115,12 @@ resources/static/   网页前端（index.html + css + js，无框架）
 
 ## 路线图
 
-- **v0.1（当前）**：工单全状态机 + 台账 + 换件扣库存 + 规则优先级 + 网页前端（看板/报修/库存/台账）✅
-- v0.2：SLA 超时标记与预警、合同管理（M3）、通知 mock
-- v1：登录认证(JWT)、可配置字典与自定义字段（M14）、Redis、迁移多模块
+- **v0.1**：工单全状态机 + 台账 + 换件扣库存 + 规则优先级 + 网页前端 ✅
+- **v0.2（当前）**：登录认证（JWT + BCrypt + 拦截器），操作人从登录态认定 ✅
+- v0.3：SLA 超时标记与预警、合同管理（M3）、通知 mock
+- v1：可配置字典与自定义字段（M14）、Redis、迁移多模块
 - v2+：报表看板、账款、AI 接入（智能报修/派单建议）、多租户
 
 ## 已知取舍（Demo 阶段故意不做）
 
-无登录认证（传 `operatorId`）· 密码明文种子数据 · 实体直接当响应返回 · 无分页 · 通知仅打日志 · 单租户。均在代码注释中标注了 v1 的演进方向。
+实体直接当响应返回 · 无分页 · 通知仅打日志 · 单租户 · JWT 无服务端吊销（登出=前端删令牌）。均在代码注释中标注了演进方向。

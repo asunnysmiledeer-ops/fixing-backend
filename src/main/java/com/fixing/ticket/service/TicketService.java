@@ -1,6 +1,7 @@
 package com.fixing.ticket.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.fixing.auth.UserContext;
 import com.fixing.common.BusinessException;
 import com.fixing.customer.mapper.CustomerMapper;
 import com.fixing.equipment.mapper.EquipmentMapper;
@@ -98,7 +99,7 @@ public class TicketService {
 
     @Transactional
     public Ticket create(TicketCreateDTO dto) {
-        SysUser operator = requireUser(dto.getOperatorId());
+        SysUser operator = UserContext.current(); // 操作人 = 当前登录用户，客户端说了不算
         // 报修入口给客户和管理员（管理员代客户录单是常见场景）
         requireRole(operator, UserRole.CUSTOMER, UserRole.ADMIN);
 
@@ -142,7 +143,7 @@ public class TicketService {
     @Transactional
     public Ticket assign(Long ticketId, TicketAssignDTO dto) {
         Ticket ticket = requireTicket(ticketId);
-        SysUser operator = requireUser(dto.getOperatorId());
+        SysUser operator = UserContext.current(); // 操作人 = 当前登录用户，客户端说了不算
         requireRole(operator, UserRole.ADMIN);
         SysUser engineer = requireEngineer(dto.getEngineerId());
 
@@ -164,7 +165,7 @@ public class TicketService {
     @Transactional
     public Ticket reassign(Long ticketId, TicketAssignDTO dto) {
         Ticket ticket = requireTicket(ticketId);
-        SysUser operator = requireUser(dto.getOperatorId());
+        SysUser operator = UserContext.current(); // 操作人 = 当前登录用户，客户端说了不算
         requireRole(operator, UserRole.ADMIN);
         SysUser engineer = requireEngineer(dto.getEngineerId());
 
@@ -185,7 +186,7 @@ public class TicketService {
     @Transactional
     public Ticket accept(Long ticketId, TicketActionDTO dto) {
         Ticket ticket = requireTicket(ticketId);
-        SysUser operator = requireUser(dto.getOperatorId());
+        SysUser operator = UserContext.current(); // 操作人 = 当前登录用户，客户端说了不算
         requireAssignedEngineer(ticket, operator); // 工程师B 不能接派给 工程师A 的单
 
         changeStatus(ticket, TicketStatus.IN_PROGRESS, operator, "accept", dto.getRemark());
@@ -198,7 +199,7 @@ public class TicketService {
     @Transactional
     public Ticket complete(Long ticketId, TicketActionDTO dto) {
         Ticket ticket = requireTicket(ticketId);
-        SysUser operator = requireUser(dto.getOperatorId());
+        SysUser operator = UserContext.current(); // 操作人 = 当前登录用户，客户端说了不算
         requireAssignedEngineer(ticket, operator);
 
         changeStatus(ticket, TicketStatus.PENDING_CONFIRM, operator, "complete",
@@ -214,7 +215,7 @@ public class TicketService {
     @Transactional
     public Ticket confirm(Long ticketId, TicketActionDTO dto) {
         Ticket ticket = requireTicket(ticketId);
-        SysUser operator = requireUser(dto.getOperatorId());
+        SysUser operator = UserContext.current(); // 操作人 = 当前登录用户，客户端说了不算
         // v0 只校验角色是客户；"是否本工单的客户"要等 v1 用户和客户关联后才能校验
         requireRole(operator, UserRole.CUSTOMER);
 
@@ -230,7 +231,7 @@ public class TicketService {
     @Transactional
     public Ticket reject(Long ticketId, TicketActionDTO dto) {
         Ticket ticket = requireTicket(ticketId);
-        SysUser operator = requireUser(dto.getOperatorId());
+        SysUser operator = UserContext.current(); // 操作人 = 当前登录用户，客户端说了不算
         requireRole(operator, UserRole.CUSTOMER);
 
         changeStatus(ticket, TicketStatus.IN_PROGRESS, operator, "reject",
@@ -249,7 +250,7 @@ public class TicketService {
     @Transactional
     public Ticket cancel(Long ticketId, TicketActionDTO dto) {
         Ticket ticket = requireTicket(ticketId);
-        SysUser operator = requireUser(dto.getOperatorId());
+        SysUser operator = UserContext.current(); // 操作人 = 当前登录用户，客户端说了不算
         requireRole(operator, UserRole.CUSTOMER, UserRole.ADMIN);
 
         if (operator.getRole() == UserRole.CUSTOMER
@@ -274,7 +275,7 @@ public class TicketService {
     @Transactional
     public SparePartUsage usePart(Long ticketId, UsePartDTO dto) {
         Ticket ticket = requireTicket(ticketId);
-        SysUser operator = requireUser(dto.getOperatorId());
+        SysUser operator = UserContext.current(); // 操作人 = 当前登录用户，客户端说了不算
         requireAssignedEngineer(ticket, operator);
 
         // 只有"处理中"的工单能领料 —— 没接单不能领，完工了也不能补领

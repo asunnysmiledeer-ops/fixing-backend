@@ -12,7 +12,7 @@ USE fixing;
 CREATE TABLE IF NOT EXISTS sys_user (
   id          BIGINT PRIMARY KEY AUTO_INCREMENT,
   username    VARCHAR(32)  NOT NULL UNIQUE,
-  password    VARCHAR(64)  NOT NULL,                 -- v0 明文占位，上线前必须 BCrypt
+  password    VARCHAR(64)  NOT NULL,                 -- BCrypt 散列（60字符），永不存明文
   role        VARCHAR(16)  NOT NULL,                 -- CUSTOMER / ADMIN / ENGINEER
   real_name   VARCHAR(32),
   created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP

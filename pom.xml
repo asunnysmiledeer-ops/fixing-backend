@@ -67,6 +67,36 @@
             <scope>provided</scope>
         </dependency>
 
+        <!-- ── 登录认证（v0.2）──
+             刻意不上完整 Spring Security（对 Demo 过重、封装太深不利于理解），
+             改用 JWT + 自写拦截器，整条鉴权链一眼能看穿 -->
+
+        <!-- JWT：签发/解析令牌。0.12.x 拆成 api(编译) + impl/jackson(运行期) 三件套 -->
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-api</artifactId>
+            <version>0.12.6</version>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-impl</artifactId>
+            <version>0.12.6</version>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-jackson</artifactId>
+            <version>0.12.6</version>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!-- 只借 Spring Security 的密码散列工具（BCrypt），不引入它的过滤器链。
+             版本由 Spring Boot 父工程统一管理，不用写 version -->
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-crypto</artifactId>
+        </dependency>
+
         <!-- 测试启动器：JUnit5 + MockMvc 等 -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
