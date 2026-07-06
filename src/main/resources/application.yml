@@ -1,0 +1,31 @@
+# FIX-ING Demo v0 · 应用配置
+server:
+  port: 8080
+
+spring:
+  application:
+    name: fixing-backend
+  datasource:
+    # 本地 MySQL；数据库名 fixing，建库建表脚本见 sql/schema.sql
+    url: jdbc:mysql://localhost:3306/fixing?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
+    username: root
+    # 密码从环境变量 DB_PASSWORD 读取，没设置时用默认值（仅限本机开发库）。
+    # 原则：真实密码永远不硬编码进代码库 —— 公开仓库尤其如此
+    password: ${DB_PASSWORD:1234}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+mybatis-plus:
+  configuration:
+    # 【关键】下划线列名(ticket_no) ↔ Java 驼峰属性(ticketNo) 自动映射。
+    # 不开这个开关，查询出来的对象属性全是 null —— 数据层最常见的暗雷。
+    map-underscore-to-camel-case: true
+    # 开发期把 MyBatis 执行的 SQL 打到控制台，方便学习/排错；上线要换成正经日志实现
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  global-config:
+    db-config:
+      # 主键策略：跟随数据库自增(AUTO_INCREMENT)，与建表 DDL 保持一致
+      id-type: auto
+
+logging:
+  level:
+    com.fixing: debug
