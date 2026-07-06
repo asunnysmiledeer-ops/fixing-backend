@@ -6,6 +6,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 /**
  * 全局异常处理器：Controller 层抛出的异常统一在这里翻译成 Result 响应。
@@ -40,6 +41,18 @@ public class GlobalExceptionHandler {
                 .map(err -> err.getField() + " " + err.getDefaultMessage())
                 .orElse("参数校验失败");
         return Result.fail(msg);
+    }
+
+    /**
+     * 静态资源/接口路径不存在：这是正常的 404，不是服务器错误。
+     * 不单独处理的话会掉进下面的兜底 Exception 处理器变成 500 ——
+     * 真实案例：浏览器自动请求 /favicon.ico，日志里刷出一整段误报堆栈。
+     * 教训：兜底 handler 一时爽，框架自带的语义异常要在它之前接住。
+     */
+    @ExceptionHandler(NoResourceFoundException.class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    public Result<Void> handleNotFound(NoResourceFoundException e) {
+        return Result.fail("资源不存在: " + e.getResourcePath());
     }
 
     /**

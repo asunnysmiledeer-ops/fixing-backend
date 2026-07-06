@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FIX-ING · 设备维保平台 Demo</title>
+<!--
+  FIX-ING Demo v0 前端 —— 纯静态 HTML + 原生 JS，零构建零依赖。
+  放在 src/main/resources/static/ 下，由 Spring Boot 内嵌 Tomcat 直接托管，
+  与后端同源（都是 localhost:8080），所以不需要任何 CORS 配置。
+
+  v0 的取舍：不上 Vue/React（引入 node 构建链对 Demo 是负担），
+  等 v1 做管理后台时再换正经前端框架 —— 后端 API 不用改，这就是前后端分离的意义。
+-->
+<!-- 内联 SVG favicon（emoji 转 data URI）：不用额外文件，也避免浏览器请求 /favicon.ico 落空 -->
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🔧</text></svg>">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<!-- ═══════════ 顶栏：产品名 + 身份切换 ═══════════ -->
+<header class="topbar">
+  <div class="brand">🔧 FIX-ING <span class="brand-sub">通用设备维保平台 · Demo v0</span></div>
+  <div class="identity">
+    <label>当前身份</label>
+    <!-- v0 没有登录：切换这个下拉框 = 换一个 operatorId 调接口。
+         不同身份看到的操作按钮不同（但真正的权限校验在后端，前端只是"少画几个按钮"） -->
+    <select id="userSelect"></select>
+  </div>
+</header>
+
+<!-- ═══════════ 导航页签 ═══════════ -->
+<nav class="tabs">
+  <button class="tab active" data-panel="board">📋 工单看板</button>
+  <button class="tab" data-panel="create">➕ 我要报修</button>
+  <button class="tab" data-panel="inventory">📦 备件库存</button>
+  <button class="tab" data-panel="ledger">🏥 客户与设备</button>
+</nav>
+
+<main>
+
+  <!-- ═══════════ 面板1：工单看板（按状态分列，Demo 验收点） ═══════════ -->
+  <section id="panel-board" class="panel">
+    <div class="board-toolbar">
+      <span id="boardSummary" class="board-summary"></span>
+      <button class="btn" onclick="loadBoard()">🔄 刷新</button>
+    </div>
+    <!-- 六个状态列由 JS 动态生成，卡片点击弹出详情 -->
+    <div id="board" class="board"></div>
+  </section>
+
+  <!-- ═══════════ 面板2：报修表单 ═══════════ -->
+  <section id="panel-create" class="panel hidden">
+    <div class="card form-card">
+      <h2>提交报修</h2>
+      <form id="createForm">
+        <div class="form-row">
+          <label>客户</label>
+          <select id="fCustomer" required></select>
+        </div>
+        <div class="form-row">
+          <label>工单类型</label>
+          <select id="fType">
+            <option value="HARDWARE">硬件（上门维修）</option>
+            <option value="SOFTWARE">软件（远程处理）</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label>故障设备</label>
+          <!-- 选了客户后由 JS 联动加载该客户的设备；硬件工单必选（后端也会校验） -->
+          <select id="fEquipment"><option value="">— 请先选客户 —</option></select>
+        </div>
+        <div class="form-row">
+          <label>标题</label>
+          <input id="fTitle" required maxlength="128" placeholder="如：门诊大厅叫号主机黑屏">
+        </div>
+        <div class="form-row">
+          <label>故障描述</label>
+          <!-- 描述会被后端的规则优先级引擎扫描：含"全院"→P0、"全科"→P1、"多台"→P2、"咨询"→P4 -->
+          <textarea id="fDesc" rows="3" placeholder="尽量描述影响范围（如：全院停摆 / 单台故障），系统会自动判定优先级"></textarea>
+        </div>
+        <div class="form-row">
+          <label>联系人</label>
+          <input id="fContactName" placeholder="现场联系人">
+        </div>
+        <div class="form-row">
+          <label>联系电话</label>
+          <input id="fContactPhone" placeholder="手机号">
+        </div>
+        <button type="submit" class="btn btn-primary">提交报修</button>
+      </form>
+    </div>
+  </section>
+
+  <!-- ═══════════ 面板3：备件库存 + 领料流水 ═══════════ -->
+  <section id="panel-inventory" class="panel hidden">
+    <div class="card">
+      <h2>备件库存</h2>
+      <table id="partsTable">
+        <thead><tr><th>ID</th><th>名称</th><th>分类</th><th>库存</th><th>单价(元)</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div class="card">
+      <h2>领料流水 <small>（想统计先记细：谁/哪张单/哪台设备/几个）</small></h2>
+      <table id="usageTable">
+        <thead><tr><th>时间</th><th>备件</th><th>数量</th><th>工程师</th><th>工单</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ═══════════ 面板4：客户与设备台账 ═══════════ -->
+  <section id="panel-ledger" class="panel hidden">
+    <div class="card">
+      <h2>客户台账 <small>（医院只是客户的一种 —— customerType 不写死行业）</small></h2>
+      <table id="customerTable">
+        <thead><tr><th>ID</th><th>名称</th><th>类型</th><th>联系人</th><th>电话</th><th>地址</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div class="card">
+      <h2>设备台账 <small>（点击行查看该设备的维修历史）</small></h2>
+      <table id="equipmentTable">
+        <thead><tr><th>ID</th><th>类型</th><th>型号</th><th>序列号</th><th>位置</th><th>状态</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <div id="equipmentHistory"></div>
+    </div>
+  </section>
+
+</main>
+
+<!-- ═══════════ 工单详情弹窗（信息 + 时间线 + 按角色/状态显示的动作按钮） ═══════════ -->
+<div id="modalMask" class="modal-mask hidden" onclick="if(event.target===this) closeModal()">
+  <div class="modal">
+    <div class="modal-head">
+      <h2 id="mTitle"></h2>
+      <button class="btn-close" onclick="closeModal()">✕</button>
+    </div>
+    <div id="mBody"></div>
+  </div>
+</div>
+
+<!-- 右下角轻提示（操作成功/失败都从这里冒出来） -->
+<div id="toast" class="toast hidden"></div>
+
+<script src="js/app.js"></script>
+</body>
+</html>

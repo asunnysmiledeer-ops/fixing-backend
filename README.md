@@ -11,6 +11,7 @@
 |---|---|---|
 | 框架 | Spring Boot 3.5（单模块） | v0 故意不上若依/多模块，先把三层架构亲手过一遍 |
 | 持久层 | MyBatis-Plus 3.5 + MySQL | `map-underscore-to-camel-case` 必开 |
+| 前端 | 纯静态 HTML + 原生 JS | 放 `resources/static/`，Spring Boot 直接托管，同源零跨域零构建；v1 再换 Vue/React |
 | 构建 | Maven，Java 17+ | |
 
 ## 快速开始
@@ -26,7 +27,10 @@ mvn spring-boot:run
 # 3. 验证
 curl http://localhost:8080/ping   # → ok
 
-# 4. 一键跑完整演示链（含反面用例）
+# 4. 打开网页前端（工单看板/报修/库存/台账，右上角切换身份演示三种角色）
+open http://localhost:8080
+
+# 5. 或者用脚本一键跑完整演示链（含反面用例）
 bash scripts/demo-flow.sh
 ```
 
@@ -82,6 +86,11 @@ com.fixing
  ├─ inventory/   备件库存 + 领料流水（M8）：原子扣减
  └─ ticket/      工单中心（M4 核心）：状态机 / 动作接口 / 流转日志
      └─ priority/  PriorityDecider 接口 + 规则实现（将来换 AI，业务不改）
+
+resources/static/   网页前端（index.html + css + js，无框架）
+ · 工单看板：六状态分列，状态分布一目了然（Demo 验收点）
+ · 详情弹窗：流转时间线 + 按"身份×状态"显示动作按钮
+ · 前端只是少画几个按钮 —— 权限与状态机的真校验全在后端
 ```
 
 ## 三条贯穿设计心法
@@ -92,7 +101,7 @@ com.fixing
 
 ## 路线图
 
-- **v0.1（当前）**：工单全状态机 + 台账 + 换件扣库存 + 规则优先级 ✅
+- **v0.1（当前）**：工单全状态机 + 台账 + 换件扣库存 + 规则优先级 + 网页前端（看板/报修/库存/台账）✅
 - v0.2：SLA 超时标记与预警、合同管理（M3）、通知 mock
 - v1：登录认证(JWT)、可配置字典与自定义字段（M14）、Redis、迁移多模块
 - v2+：报表看板、账款、AI 接入（智能报修/派单建议）、多租户
