@@ -36,4 +36,18 @@ public class UserContext {
     public static void clear() {
         HOLDER.remove();
     }
+
+    /**
+     * 角色断言：当前登录人必须是指定角色之一，否则抛业务异常。
+     * 管理端专属接口（合同/发票/看板/台账管理）入口处调一句即可。
+     */
+    public static SysUser require(com.fixing.user.domain.UserRole... allowed) {
+        SysUser user = current();
+        for (com.fixing.user.domain.UserRole role : allowed) {
+            if (user.getRole() == role) {
+                return user;
+            }
+        }
+        throw new BusinessException("无权访问：该功能仅限 " + java.util.Arrays.toString(allowed));
+    }
 }

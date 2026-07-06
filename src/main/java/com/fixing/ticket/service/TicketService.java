@@ -3,6 +3,7 @@ package com.fixing.ticket.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fixing.auth.UserContext;
 import com.fixing.common.BusinessException;
+import com.fixing.contract.service.ContractService;
 import com.fixing.customer.mapper.CustomerMapper;
 import com.fixing.equipment.mapper.EquipmentMapper;
 import com.fixing.inventory.domain.SparePartUsage;
@@ -46,6 +47,7 @@ public class TicketService {
     private final EquipmentMapper equipmentMapper;
     private final InventoryService inventoryService;
     private final PriorityDecider priorityDecider;
+    private final ContractService contractService;
 
     /**
      * 构造器注入所有依赖。注意 PriorityDecider 注入的是接口 ——
@@ -58,7 +60,8 @@ public class TicketService {
                          CustomerMapper customerMapper,
                          EquipmentMapper equipmentMapper,
                          InventoryService inventoryService,
-                         PriorityDecider priorityDecider) {
+                         PriorityDecider priorityDecider,
+                         ContractService contractService) {
         this.ticketMapper = ticketMapper;
         this.ticketLogMapper = ticketLogMapper;
         this.sysUserMapper = sysUserMapper;
@@ -66,27 +69,46 @@ public class TicketService {
         this.equipmentMapper = equipmentMapper;
         this.inventoryService = inventoryService;
         this.priorityDecider = priorityDecider;
+        this.contractService = contractService;
     }
 
     // ══════════════════════════ 查询 ══════════════════════════
 
-    /** 工单详情 */
+    /** 工单详情（带可见性校验：不是你的单，连看都看不到） */
     public Ticket getById(Long id) {
-        return requireTicket(id);
+        Ticket ticket = requireTicket(id);
+        requireVisible(ticket, UserContext.current());
+        return ticket;
     }
 
-    /** 工单流转记录（客户查进度靠它） */
+    /** 工单流转记录（客户查进度靠它），同样先过可见性 */
     public List<TicketLog> getLogs(Long ticketId) {
-        requireTicket(ticketId); // 工单不存在时明确报错，而不是静默返回空列表
+        Ticket ticket = requireTicket(ticketId); // 工单不存在时明确报错，而不是静默返回空列表
+        requireVisible(ticket, UserContext.current());
         return ticketLogMapper.selectList(new LambdaQueryWrapper<TicketLog>()
                 .eq(TicketLog::getTicketId, ticketId)
                 .orderByAsc(TicketLog::getId));
     }
 
-    /** 工单列表，按 状态/优先级/工程师/客户 组合筛选（都可空） */
+    /**
+     * 工单列表，按 状态/优先级/工程师/客户 组合筛选（都可空）。
+     *
+     * <p>【数据隔离，v0.3 核心】筛选条件之前先按登录角色强制圈定范围：
+     * 工程师只见派给自己的单、客户只见自己单位的单、管理员全量。
+     * 这层隔离必须做在后端 —— 前端"少画个入口"挡不住直接调接口的人。
+     */
     public List<Ticket> list(TicketStatus status, Priority priority, Long engineerId, Long customerId) {
+        SysUser me = UserContext.current();
         LambdaQueryWrapper<Ticket> query = new LambdaQueryWrapper<>();
-        // Wrapper 的 condition 重载：第一个参数为 false 时跳过该条件，省去一堆 if
+
+        // 第一步：按角色圈定"我能看到的范围"（硬边界，客户端参数改不掉）
+        switch (me.getRole()) {
+            case ENGINEER -> query.eq(Ticket::getAssignedEngineerId, me.getId());
+            case CUSTOMER -> query.eq(Ticket::getCustomerId, requireCustomerId(me));
+            case ADMIN -> { /* 管理员全量 */ }
+        }
+
+        // 第二步：范围之内再叠加筛选条件（condition 重载：第一个参数为 false 时跳过）
         query.eq(status != null, Ticket::getStatus, status)
              .eq(priority != null, Ticket::getPriority, priority)
              .eq(engineerId != null, Ticket::getAssignedEngineerId, engineerId)
@@ -103,23 +125,45 @@ public class TicketService {
         // 报修入口给客户和管理员（管理员代客户录单是常见场景）
         requireRole(operator, UserRole.CUSTOMER, UserRole.ADMIN);
 
-        // 外键指向的记录必须真实存在 —— 别等插入后靠脏数据坑自己
-        if (customerMapper.selectById(dto.getCustomerId()) == null) {
-            throw new BusinessException("客户不存在: id=" + dto.getCustomerId());
+        // 【数据隔离】客户报修：归属单位一律取自登录账号，客户端传什么都不认；
+        // 管理员代录单才允许指定 customerId
+        Long customerId = operator.getRole() == UserRole.CUSTOMER
+                ? requireCustomerId(operator)
+                : dto.getCustomerId();
+        if (customerId == null || customerMapper.selectById(customerId) == null) {
+            throw new BusinessException("客户不存在: id=" + customerId);
         }
+
+        // 【业务规则，v0.3】服务已全部到期的客户不能再报修（登录时前端已提示，这里是硬拦截）
+        if (operator.getRole() == UserRole.CUSTOMER && contractService.isServiceExpired(customerId)) {
+            throw new BusinessException("您的维保服务已全部到期，无法报修，请联系平台续约");
+        }
+
+        // 【业务规则】客户报修必须附故障图片或视频（管理员代录可免，电话报修没图很正常）
+        if (operator.getRole() == UserRole.CUSTOMER
+                && (dto.getPhotos() == null || dto.getPhotos().isEmpty())) {
+            throw new BusinessException("请上传故障图片或视频后再提交报修");
+        }
+
         if (dto.getType() == TicketType.HARDWARE) {
-            // 硬件工单必须挂设备（软件工单 v0 允许不挂）
+            // 硬件工单必须挂设备（软件工单允许不挂）
             if (dto.getEquipmentId() == null) {
                 throw new BusinessException("硬件工单必须选择设备");
             }
-            if (equipmentMapper.selectById(dto.getEquipmentId()) == null) {
+            var equipment = equipmentMapper.selectById(dto.getEquipmentId());
+            if (equipment == null) {
                 throw new BusinessException("设备不存在: id=" + dto.getEquipmentId());
+            }
+            // 设备必须属于报修客户 —— 防止 A 医院拿 B 医院的设备报修
+            if (!equipment.getCustomerId().equals(customerId)) {
+                throw new BusinessException("该设备不属于此客户，无法报修");
             }
         }
 
         Ticket ticket = new Ticket();
         ticket.setTicketNo(generateTicketNo());
-        ticket.setCustomerId(dto.getCustomerId());
+        ticket.setCustomerId(customerId);
+        ticket.setPhotos(dto.getPhotos());
         ticket.setEquipmentId(dto.getEquipmentId());
         ticket.setType(dto.getType());
         ticket.setTitle(dto.getTitle());
@@ -216,8 +260,7 @@ public class TicketService {
     public Ticket confirm(Long ticketId, TicketActionDTO dto) {
         Ticket ticket = requireTicket(ticketId);
         SysUser operator = UserContext.current(); // 操作人 = 当前登录用户，客户端说了不算
-        // v0 只校验角色是客户；"是否本工单的客户"要等 v1 用户和客户关联后才能校验
-        requireRole(operator, UserRole.CUSTOMER);
+        requireTicketOwner(ticket, operator); // 必须是"本工单客户"的账号，别家医院确认不了你的单
 
         changeStatus(ticket, TicketStatus.COMPLETED, operator, "confirm", dto.getRemark());
         LocalDateTime now = LocalDateTime.now();
@@ -232,7 +275,7 @@ public class TicketService {
     public Ticket reject(Long ticketId, TicketActionDTO dto) {
         Ticket ticket = requireTicket(ticketId);
         SysUser operator = UserContext.current(); // 操作人 = 当前登录用户，客户端说了不算
-        requireRole(operator, UserRole.CUSTOMER);
+        requireTicketOwner(ticket, operator); // 同 confirm：只有本工单的客户能驳回
 
         changeStatus(ticket, TicketStatus.IN_PROGRESS, operator, "reject",
                 dto.getRemark() == null ? "客户驳回" : "驳回原因: " + dto.getRemark());
@@ -253,9 +296,11 @@ public class TicketService {
         SysUser operator = UserContext.current(); // 操作人 = 当前登录用户，客户端说了不算
         requireRole(operator, UserRole.CUSTOMER, UserRole.ADMIN);
 
-        if (operator.getRole() == UserRole.CUSTOMER
-                && ticket.getStatus() != TicketStatus.PENDING_ASSIGN) {
-            throw new BusinessException("已派单的工单客户不能自行取消，请联系管理员");
+        if (operator.getRole() == UserRole.CUSTOMER) {
+            requireTicketOwner(ticket, operator); // 只能撤自己单位的单
+            if (ticket.getStatus() != TicketStatus.PENDING_ASSIGN) {
+                throw new BusinessException("已派单的工单客户不能自行取消，请联系管理员");
+            }
         }
 
         changeStatus(ticket, TicketStatus.CANCELLED, operator, "cancel",
@@ -379,6 +424,37 @@ public class TicketService {
         requireRole(operator, UserRole.ENGINEER);
         if (!operator.getId().equals(ticket.getAssignedEngineerId())) {
             throw new BusinessException("无权操作: 该工单的责任工程师不是你");
+        }
+    }
+
+    /** 客户账号必须关联客户单位（数据没配好宁可报错，不能放行） */
+    private Long requireCustomerId(SysUser user) {
+        if (user.getCustomerId() == null) {
+            throw new BusinessException("客户账号未关联客户单位，请联系管理员配置");
+        }
+        return user.getCustomerId();
+    }
+
+    /** 操作人必须是"本工单客户"的账号（确认/驳回/取消都要过这道） */
+    private void requireTicketOwner(Ticket ticket, SysUser operator) {
+        requireRole(operator, UserRole.CUSTOMER);
+        if (!ticket.getCustomerId().equals(requireCustomerId(operator))) {
+            throw new BusinessException("无权操作: 该工单不属于你的单位");
+        }
+    }
+
+    /**
+     * 可见性校验（查详情/日志时用）：
+     * 管理员全可见；工程师只见派给自己的；客户只见自己单位的。
+     */
+    private void requireVisible(Ticket ticket, SysUser viewer) {
+        boolean visible = switch (viewer.getRole()) {
+            case ADMIN -> true;
+            case ENGINEER -> viewer.getId().equals(ticket.getAssignedEngineerId());
+            case CUSTOMER -> ticket.getCustomerId().equals(requireCustomerId(viewer));
+        };
+        if (!visible) {
+            throw new BusinessException("无权查看: 该工单与你无关");
         }
     }
 

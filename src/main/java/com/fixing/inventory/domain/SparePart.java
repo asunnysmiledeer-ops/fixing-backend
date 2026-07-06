@@ -28,6 +28,9 @@ public class SparePart {
     /** 当前库存量。扣减必须走原子 SQL（见 SparePartMapper.deductStock），不能读出来减完再写回 */
     private Integer stockQty;
 
+    /** 低库存阈值：stockQty < 该值 → 触发预警（每种备件按消耗速度单独设） */
+    private Integer lowStockThreshold;
+
     /** 单价。金额一律用 BigDecimal —— double 有精度误差，算钱会出事 */
     private BigDecimal unitPrice;
 

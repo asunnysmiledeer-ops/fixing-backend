@@ -3,6 +3,7 @@ package com.fixing;
 import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 /**
  * FIX-ING Demo v0 启动类。
@@ -16,6 +17,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  */
 @SpringBootApplication
 @MapperScan("com.fixing.**.mapper")
+@EnableScheduling // 开启 @Scheduled 定时任务（合同到期提醒等）
 public class FixingApplication {
 
     public static void main(String[] args) {

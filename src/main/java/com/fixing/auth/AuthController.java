@@ -5,7 +5,10 @@ import com.fixing.auth.dto.LoginDTO;
 import com.fixing.auth.dto.LoginVO;
 import com.fixing.common.BusinessException;
 import com.fixing.common.Result;
+import com.fixing.contract.dto.ServiceNotice;
+import com.fixing.contract.service.ContractService;
 import com.fixing.user.domain.SysUser;
+import com.fixing.user.domain.UserRole;
 import com.fixing.user.mapper.SysUserMapper;
 import jakarta.validation.Valid;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
@@ -19,6 +22,9 @@ import org.springframework.web.bind.annotation.*;
  * 1. 数据库只存 BCrypt 散列，永不存明文 —— 库被拖走也拿不到原始密码；
  * 2. 登录失败只说"用户名或密码错误"，不区分是哪个错 ——
  *    否则攻击者可以先探出哪些用户名存在，再定向撞密码。
+ *
+ * <p>v0.3：客户登录时顺带下发服务状态（合同是否到期/即将到期），
+ * 前端"登录即弹提示"靠它，不用再发一次请求。
  */
 @RestController
 @RequestMapping("/auth")
@@ -26,6 +32,7 @@ public class AuthController {
 
     private final SysUserMapper sysUserMapper;
     private final JwtUtil jwtUtil;
+    private final ContractService contractService;
 
     /**
      * BCrypt：加盐慢散列。同一个密码每次散列结果都不同（盐随机），
@@ -33,9 +40,11 @@ public class AuthController {
      */
     private final PasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
 
-    public AuthController(SysUserMapper sysUserMapper, JwtUtil jwtUtil) {
+    public AuthController(SysUserMapper sysUserMapper, JwtUtil jwtUtil,
+                          ContractService contractService) {
         this.sysUserMapper = sysUserMapper;
         this.jwtUtil = jwtUtil;
+        this.contractService = contractService;
     }
 
     /** 登录：校验通过 → 签发 JWT。此接口在拦截器白名单里（WebConfig）。 */
@@ -50,8 +59,7 @@ public class AuthController {
         }
 
         String token = jwtUtil.createToken(user.getId());
-        return Result.ok(new LoginVO(token, user.getId(), user.getUsername(),
-                user.getRealName(), user.getRole()));
+        return Result.ok(buildVO(user, token));
     }
 
     /**
@@ -60,10 +68,8 @@ public class AuthController {
      */
     @GetMapping("/me")
     public Result<LoginVO> me() {
-        SysUser user = UserContext.current();
-        // token 原样不返回（前端已有）；复用 LoginVO 的形状，token 位置给 null
-        return Result.ok(new LoginVO(null, user.getId(), user.getUsername(),
-                user.getRealName(), user.getRole()));
+        // token 原样不返回（前端已有）；服务状态每次都重新算（合同可能刚续/刚到期）
+        return Result.ok(buildVO(UserContext.current(), null));
     }
 
     /**
@@ -73,5 +79,15 @@ public class AuthController {
     @PostMapping("/logout")
     public Result<Void> logout() {
         return Result.ok();
+    }
+
+    /** 拼装登录响应：客户角色附带服务到期状态，其他角色该字段为 null */
+    private LoginVO buildVO(SysUser user, String token) {
+        ServiceNotice notice = null;
+        if (user.getRole() == UserRole.CUSTOMER && user.getCustomerId() != null) {
+            notice = contractService.noticeFor(user.getCustomerId());
+        }
+        return new LoginVO(token, user.getId(), user.getUsername(),
+                user.getRealName(), user.getRole(), user.getCustomerId(), notice);
     }
 }

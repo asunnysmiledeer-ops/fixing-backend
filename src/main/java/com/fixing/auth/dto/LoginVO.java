@@ -1,5 +1,6 @@
 package com.fixing.auth.dto;
 
+import com.fixing.contract.dto.ServiceNotice;
 import com.fixing.user.domain.UserRole;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -19,4 +20,14 @@ public class LoginVO {
     private String username;
     private String realName;
     private UserRole role;
+
+    /** 客户角色专用：所属客户单位 id（前端报修表单等不再需要选客户） */
+    private Long customerId;
+
+    /**
+     * 客户角色专用：服务状态提示（登录即知）——
+     * EXPIRED → 前端弹全屏"服务已到期"；EXPIRING → 顶部横幅倒计时。
+     * 非客户角色为 null。
+     */
+    private ServiceNotice serviceNotice;
 }

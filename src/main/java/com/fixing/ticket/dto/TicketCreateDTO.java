@@ -18,8 +18,14 @@ public class TicketCreateDTO {
     // 注意：这里没有 operatorId —— 操作人一律从登录态(UserContext)取。
     // "我是谁"由服务端认定，客户端说了不算，这是认证后最重要的观念转变。
 
-    @NotNull(message = "客户不能为空")
+    /**
+     * 客户 id：仅管理员代录单时需要传；客户自己报修时忽略此字段，
+     * 后端强制取登录账号关联的单位（数据隔离）。
+     */
     private Long customerId;
+
+    /** 故障图片/视频 URL（先调 POST /files 上传拿 URL）。客户报修必须至少一个 */
+    private java.util.List<String> photos;
 
     /** 硬件工单必填；软件工单可空（Service 里按 type 校验） */
     private Long equipmentId;

@@ -33,5 +33,12 @@ public class SysUser {
     /** 真实姓名，展示用 */
     private String realName;
 
+    /**
+     * 客户角色专用：这个账号属于哪家客户（外键 → customer.id）——
+     * 数据隔离的根：客户登录后只能看到 customer_id 等于它的工单/设备。
+     * 管理员/工程师该字段为 null。
+     */
+    private Long customerId;
+
     private LocalDateTime createdAt;
 }

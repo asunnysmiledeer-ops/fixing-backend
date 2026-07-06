@@ -1,8 +1,10 @@
 package com.fixing.ticket.domain;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler;
 import com.fixing.ticket.enums.Priority;
 import com.fixing.ticket.enums.TicketStatus;
 import com.fixing.ticket.enums.TicketType;
@@ -17,7 +19,9 @@ import java.time.LocalDateTime;
  * 将来算 SLA（响应时长、维修时长）全靠这些点位相减。
  */
 @Data
-@TableName("ticket")
+// autoResultMap=true：让下面 photos 字段的 JSON TypeHandler 在查询时也生效
+// （只标 @TableField 的话插入没问题，查出来却是 null —— MyBatis-Plus 的经典坑）
+@TableName(value = "ticket", autoResultMap = true)
 public class Ticket {
 
     @TableId(type = IdType.AUTO)
@@ -40,6 +44,13 @@ public class Ticket {
 
     /** 故障描述（PriorityDecider 的规则会读它判优先级） */
     private String description;
+
+    /**
+     * 故障图片/视频 URL 数组（M12）：客户报修必须至少传一个。
+     * 数据库列是 JSON 类型，JacksonTypeHandler 负责 List<String> ↔ JSON 字符串互转。
+     */
+    @TableField(typeHandler = JacksonTypeHandler.class)
+    private java.util.List<String> photos;
 
     /** 优先级 P0–P4，由 PriorityDecider 在建单时判定 */
     private Priority priority;

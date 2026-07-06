@@ -23,9 +23,10 @@ public class CustomerController {
         this.customerMapper = customerMapper;
     }
 
-    /** 新建客户 */
+    /** 新建客户 —— 台账维护是管理端的事 */
     @PostMapping
     public Result<Customer> create(@Valid @RequestBody Customer customer) {
+        com.fixing.auth.UserContext.require(com.fixing.user.domain.UserRole.ADMIN);
         customerMapper.insert(customer); // insert 后 MyBatis-Plus 会把自增 id 回填到对象上
         return Result.ok(customer);
     }
