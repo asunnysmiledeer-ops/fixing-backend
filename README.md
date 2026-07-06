@@ -19,7 +19,7 @@
 ## 快速开始
 
 ```bash
-# 1. 建库建表 + 灌演示数据（1客户/2设备/3备件/3用户）
+# 1. 建库建表 + 灌演示数据（2客户/3设备/3备件/5用户/2合同/2发票）
 mysql -uroot -p < sql/schema.sql
 mysql -uroot -p < sql/seed.sql
 
@@ -40,9 +40,11 @@ bash scripts/demo-flow.sh
 
 | 用户名 | 角色 | 说明 |
 |---|---|---|
-| hospital_it | CUSTOMER | 医院信息科（报修/确认/驳回） |
-| admin | ADMIN | 平台管理员（派单/改派/取消） |
-| engineer_zh | ENGINEER | 硬件工程师（接单/换件/完工） |
+| hospital_it | CUSTOMER | 市一医院信息科（合同 5 天后到期 → 演示到期横幅） |
+| clinic_it | CUSTOMER | 康泰诊所（另一家客户 → 演示数据隔离） |
+| admin | ADMIN | 平台管理员（Dashboard/派单/合同/发票） |
+| engineer_zh | ENGINEER | 张工·硬件工程师（接单/换件/完工） |
+| engineer_li | ENGINEER | 李工·软件工程师 |
 
 ## 三种角色 · 三套工作台（v0.3）
 
