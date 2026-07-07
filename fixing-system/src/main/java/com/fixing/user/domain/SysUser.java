@@ -33,4 +33,10 @@ public class SysUser extends BaseEntity {
 
     /** 客户角色专用：所属客户单位（数据隔离的根）；管理员/工程师为 null */
     private Long customerId;
+
+    /** 账号状态：0 正常 / 1 停用（人事管理的"停用"按钮；停用后无法登录） */
+    private String status;
+
+    /** 工程师驻场客户（M1.5）：驻场后该客户工单派单时置顶推荐；受平台功能开关控制 */
+    private Long residentCustomerId;
 }

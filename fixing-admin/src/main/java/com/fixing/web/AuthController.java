@@ -54,6 +54,9 @@ public class AuthController {
         if (user == null || !passwordEncoder.matches(dto.getPassword(), user.getPassword())) {
             throw new BusinessException("用户名或密码错误");
         }
+        if ("1".equals(user.getStatus())) {
+            throw new BusinessException("账号已停用，请联系平台管理员");
+        }
         return Result.ok(buildVO(user, jwtUtil.createToken(user.getId())));
     }
 

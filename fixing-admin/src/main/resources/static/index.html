@@ -134,9 +134,17 @@
       </table>
     </div>
     <div class="card">
-      <h2>设备台账 <small>（"添加机器"完工后在此登记 → 自动进入阈值基数）</small></h2>
+      <h2>设备查询 <small>（按序列号/运送时间筛选 · 点击行查看设备档案）</small></h2>
+      <div class="inline-create" style="margin-bottom:12px">
+        <input id="qSerial" placeholder="序列号(模糊)" style="width:170px">
+        <input id="qFrom" type="date" title="运送时间起">
+        <input id="qTo" type="date" title="运送时间止">
+        <select id="qType" style="width:130px"><option value="">全部类型</option></select>
+        <button class="btn btn-primary" onclick="searchEquipments()">查 询</button>
+        <button class="btn" onclick="resetEquipSearch()">重置</button>
+      </div>
       <table id="equipmentTable">
-        <thead><tr><th>ID</th><th>客户</th><th>类型</th><th>型号</th><th>序列号</th><th>位置</th></tr></thead>
+        <thead><tr><th>序列号</th><th>客户</th><th>类型/型号</th><th>位置</th><th>运送时间</th><th>维修次数</th></tr></thead>
         <tbody></tbody>
       </table>
     </div>
@@ -206,6 +214,92 @@
     </div>
   </section>
 
+
+  <!-- ═══ 订单派发（maint:order:list）：超管录单 → 管理员组装/派发 ═══ -->
+  <section id="panel-orders" class="panel hidden">
+    <div class="card">
+      <h2 style="display:flex;justify-content:space-between;align-items:center">
+        <span>销售订单 <small>（超管录入 · 管理员派发：扣整机 → 建设备档案 → 自动生成安装工单）</small></span>
+        <button class="btn btn-primary hidden" data-perm="maint:order:edit" onclick="openOrderForm()">新建订单</button>
+      </h2>
+      <table id="orderTable">
+        <thead><tr><th>订单号</th><th>客户</th><th>内容</th><th>数量</th><th>状态</th><th>操作</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div class="card">
+      <h2 style="display:flex;justify-content:space-between;align-items:center">
+        <span>整机库存 <small>（入=组装消耗配件 · 出=订单派发）</small></span>
+        <button class="btn hidden" data-perm="maint:machine:edit" onclick="openAssembleForm()">🔧 组装整机</button>
+      </h2>
+      <table id="machineTable">
+        <thead><tr><th>机型</th><th>设备类型</th><th>可派发数量</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ═══ 平台·人事（platform:user:list）═══ -->
+  <section id="panel-plat-users" class="panel hidden">
+    <div class="card">
+      <h2 style="display:flex;justify-content:space-between;align-items:center">
+        <span>人事管理 <small>（员工与客户账号 · 默认密码 123456）</small></span>
+        <button class="btn btn-primary" onclick="openUserForm()">新增账号</button>
+      </h2>
+      <table id="platUserTable">
+        <thead><tr><th>账号</th><th>姓名</th><th>角色</th><th>归属/驻场</th><th>状态</th><th>操作</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ═══ 平台·权限（platform:perm:list）═══ -->
+  <section id="panel-plat-perms" class="panel hidden">
+    <div class="card">
+      <h2>权限矩阵 <small>（勾选即生效：角色的页签与接口权限实时变化，不发版）</small></h2>
+      <div style="overflow-x:auto"><table id="permMatrix"><thead></thead><tbody></tbody></table></div>
+    </div>
+  </section>
+
+  <!-- ═══ 平台·配置（platform:config:list）═══ -->
+  <section id="panel-plat-config" class="panel hidden">
+    <div class="card">
+      <h2>功能开关 <small>（新功能一键启停 —— "要不要上驻场工程师"在这里定）</small></h2>
+      <table id="featureTable"><tbody></tbody></table>
+    </div>
+    <div class="card">
+      <h2>业务参数 <small>（收费标准等，改完即刻生效）</small></h2>
+      <table id="paramTable"><tbody></tbody></table>
+    </div>
+    <div class="card">
+      <h2 style="display:flex;justify-content:space-between;align-items:center">
+        <span>数据字典 <small>（客户类型/设备类型/备件分类 —— 增一条 = 全平台下拉多一项）</small></span>
+        <span class="inline-form">
+          <select id="dictTypeSel" style="width:130px">
+            <option value="customer_type">客户类型</option>
+            <option value="equipment_type">设备类型</option>
+            <option value="part_category">备件分类</option>
+          </select>
+          <input id="dictValue" placeholder="值(如 NURSING_HOME)" style="width:150px">
+          <input id="dictLabel" placeholder="标签(如 养老院)" style="width:110px">
+          <button class="btn btn-primary" onclick="addDict()">新增</button>
+        </span>
+      </h2>
+      <table id="dictTable"><tbody></tbody></table>
+    </div>
+  </section>
+
+  <!-- ═══ 平台·追踪（platform:log:list）═══ -->
+  <section id="panel-plat-trace" class="panel hidden">
+    <div id="overviewCards" class="dash-cards"></div>
+    <div class="card">
+      <h2>操作日志 <small>（全部写操作自动记录：谁/何时/做了什么）</small></h2>
+      <table id="operLogTable">
+        <thead><tr><th>时间</th><th>操作人</th><th>动作</th><th>接口</th><th>结果</th><th>耗时</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
 </main>
 
 <!-- 工单详情弹窗 -->
@@ -245,6 +339,73 @@
     <div class="form-row"><label>数量</label><input id="rqQty" type="number" value="1" min="1"></div>
     <div class="form-row"><label>理由</label><input id="rqReason" placeholder="如：库存不足 / 为工单#3备货"></div>
     <button class="btn btn-primary" onclick="saveRequest()">提交申请</button>
+  </div>
+</div>
+
+<!-- 平台·新增账号弹窗 -->
+<div id="userMask" class="modal-mask hidden" onclick="if(event.target===this) this.classList.add('hidden')">
+  <div class="modal" style="width:460px">
+    <div class="modal-head"><h2>新增账号</h2>
+      <button class="btn-close" onclick="document.getElementById('userMask').classList.add('hidden')">✕</button></div>
+    <div class="form-row"><label>用户名</label><input id="uUsername" placeholder="登录名，如 engineer_wang"></div>
+    <div class="form-row"><label>姓名</label><input id="uRealName" placeholder="如 王工(硬件工程师)"></div>
+    <div class="form-row"><label>角色</label>
+      <select id="uRole" onchange="document.getElementById('rowUCustomer').classList.toggle('hidden', this.value!=='CUSTOMER')">
+        <option value="ENGINEER">工程师</option><option value="ADMIN">运营管理员</option><option value="CUSTOMER">客户</option>
+      </select></div>
+    <div class="form-row hidden" id="rowUCustomer"><label>客户单位</label><select id="uCustomer"></select></div>
+    <div class="form-hint" style="margin-left:104px">默认密码 123456，可在列表中重置</div>
+    <button class="btn btn-primary" onclick="saveUser()">创建</button>
+  </div>
+</div>
+
+<!-- 设备档案弹窗：工程师了解整台机器的一站式视图 -->
+<div id="equipMask" class="modal-mask hidden" onclick="if(event.target===this) this.classList.add('hidden')">
+  <div class="modal" style="width:640px">
+    <div class="modal-head"><h2 id="eqTitle">设备档案</h2>
+      <button class="btn-close" onclick="document.getElementById('equipMask').classList.add('hidden')">✕</button></div>
+    <div id="eqBody"></div>
+  </div>
+</div>
+
+<!-- 新建订单（超管） -->
+<div id="orderMask" class="modal-mask hidden" onclick="if(event.target===this) this.classList.add('hidden')">
+  <div class="modal" style="width:480px">
+    <div class="modal-head"><h2>新建订单</h2>
+      <button class="btn-close" onclick="document.getElementById('orderMask').classList.add('hidden')">✕</button></div>
+    <div class="form-row"><label>客户</label><select id="oCustomer"></select></div>
+    <div class="form-row"><label>类型</label>
+      <select id="oType" onchange="orderTypeChange()"><option value="MACHINE">整机</option><option value="SOFTWARE">软件</option></select></div>
+    <div class="form-row" id="rowOModel"><label>机型</label><select id="oModel"></select></div>
+    <div class="form-row" id="rowOQty"><label>台数</label><input id="oQty" type="number" value="1" min="1"></div>
+    <div class="form-row hidden" id="rowOSoft"><label>软件</label>
+      <span style="display:flex;gap:8px;flex:1"><input id="oSoftName" placeholder="软件名"><input id="oSoftVer" placeholder="版本" style="width:90px"></span></div>
+    <div class="form-row"><label>备注</label><input id="oRemark"></div>
+    <button class="btn btn-primary" onclick="saveOrder()">创建订单</button>
+  </div>
+</div>
+
+<!-- 派发订单（管理员） -->
+<div id="dispatchMask" class="modal-mask hidden" onclick="if(event.target===this) this.classList.add('hidden')">
+  <div class="modal" style="width:480px">
+    <div class="modal-head"><h2 id="dispatchTitle">派发订单</h2>
+      <button class="btn-close" onclick="document.getElementById('dispatchMask').classList.add('hidden')">✕</button></div>
+    <div id="dispatchBody"></div>
+    <button class="btn btn-primary" onclick="confirmDispatch()">确认派发</button>
+    <div class="form-hint" style="margin:10px 0 0">派发后自动生成安装工单（待派单），随后到"工单"页指派工程师上门</div>
+  </div>
+</div>
+
+<!-- 组装整机（管理员） -->
+<div id="assembleMask" class="modal-mask hidden" onclick="if(event.target===this) this.classList.add('hidden')">
+  <div class="modal" style="width:520px">
+    <div class="modal-head"><h2>组装整机（配件 → 整机）</h2>
+      <button class="btn-close" onclick="document.getElementById('assembleMask').classList.add('hidden')">✕</button></div>
+    <div class="form-row"><label>机型</label><select id="aMachine"></select></div>
+    <div class="form-row"><label>组装台数</label><input id="aMachineQty" type="number" value="1" min="1"></div>
+    <div class="form-row" style="align-items:flex-start"><label>消耗配件</label><div id="aParts" style="flex:1"></div></div>
+    <div class="form-row"><label>备注</label><input id="aRemark"></div>
+    <button class="btn btn-primary" onclick="confirmAssemble()">完成组装入库</button>
   </div>
 </div>
 

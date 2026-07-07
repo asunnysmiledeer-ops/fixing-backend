@@ -10,7 +10,7 @@
 USE fixing;
 
 SET FOREIGN_KEY_CHECKS = 0;
-TRUNCATE TABLE part_request; TRUNCATE TABLE ticket_charge; TRUNCATE TABLE spare_part_usage; TRUNCATE TABLE ticket_log;
+TRUNCATE TABLE sales_order; TRUNCATE TABLE assembly_part; TRUNCATE TABLE assembly_record; TRUNCATE TABLE machine_stock; TRUNCATE TABLE sys_oper_log; TRUNCATE TABLE sys_dict; TRUNCATE TABLE sys_param; TRUNCATE TABLE sys_feature; TRUNCATE TABLE part_request; TRUNCATE TABLE ticket_charge; TRUNCATE TABLE spare_part_usage; TRUNCATE TABLE ticket_log;
 TRUNCATE TABLE ticket; TRUNCATE TABLE contract_software; TRUNCATE TABLE contract_part;
 TRUNCATE TABLE contract_equipment; TRUNCATE TABLE contract; TRUNCATE TABLE invoice;
 TRUNCATE TABLE software_instance; TRUNCATE TABLE spare_part; TRUNCATE TABLE equipment;
@@ -19,6 +19,7 @@ SET FOREIGN_KEY_CHECKS = 1;
 
 -- 用户（密码均 123456 的 BCrypt 散列）
 INSERT INTO sys_user (id, username, password, role, real_name, customer_id, create_time) VALUES
+  (9, 'super',       '$2a$10$WIW1rEIYMRonrCmeeQ5Rx.44PJpMrDyP2joYHR.H9F3aCn6BvOS1.', 'SUPER_ADMIN', '陈总(平台超管)', NULL, NOW()),
   (1, 'admin',       '$2a$10$WIW1rEIYMRonrCmeeQ5Rx.44PJpMrDyP2joYHR.H9F3aCn6BvOS1.', 'ADMIN',    '李运营(平台管理员)', NULL, NOW()),
   (2, 'engineer_zh', '$2a$10$WIW1rEIYMRonrCmeeQ5Rx.44PJpMrDyP2joYHR.H9F3aCn6BvOS1.', 'ENGINEER', '张工(硬件工程师)', NULL, NOW()),
   (3, 'engineer_li', '$2a$10$WIW1rEIYMRonrCmeeQ5Rx.44PJpMrDyP2joYHR.H9F3aCn6BvOS1.', 'ENGINEER', '李工(软件工程师)', NULL, NOW()),
@@ -38,21 +39,59 @@ INSERT INTO sys_role_perm (role, perm) VALUES
   -- 管理员在代码里短路放行，但仍插一份全量（permsOf(ADMIN) 取 DISTINCT 给前端画页签）
   ('ADMIN', 'maint:ticket:list'), ('ADMIN', 'maint:ticket:add'), ('ADMIN', 'maint:ticket:assign'),
   ('ADMIN', 'maint:ticket:confirm'),
-  ('ADMIN', 'maint:part:list'), ('ADMIN', 'maint:part:edit'), ('ADMIN', 'maint:part:request'),
+  ('ADMIN', 'maint:part:list'), ('ADMIN', 'maint:part:edit'),  -- 管理员只做入库审批(part:edit)，申请配件(part:request)是工程师的事
   ('ADMIN', 'maint:customer:list'), ('ADMIN', 'maint:customer:edit'),
   ('ADMIN', 'maint:equipment:list'), ('ADMIN', 'maint:equipment:edit'),
   ('ADMIN', 'maint:contract:list'), ('ADMIN', 'maint:contract:edit'),
   ('ADMIN', 'maint:invoice:list'), ('ADMIN', 'maint:invoice:edit'),
-  ('ADMIN', 'maint:dashboard:view');
+  ('ADMIN', 'maint:dashboard:view'),
+  -- 订单与整机（用户定案：超管录单，管理员执行组装与派发）
+  ('ADMIN', 'maint:order:list'), ('ADMIN', 'maint:order:dispatch'),
+  ('ADMIN', 'maint:machine:list'), ('ADMIN', 'maint:machine:edit'),
+  ('SUPER_ADMIN', 'maint:order:edit'),
+  -- 平台管理权限（挂在 SUPER_ADMIN 名下入库：超管代码短路，这些行的意义是让 permsOf 全量列表里包含它们 → 前端画平台页签）
+  ('SUPER_ADMIN', 'platform:user:list'), ('SUPER_ADMIN', 'platform:user:edit'),
+  ('SUPER_ADMIN', 'platform:perm:list'), ('SUPER_ADMIN', 'platform:perm:edit'),
+  ('SUPER_ADMIN', 'platform:config:list'), ('SUPER_ADMIN', 'platform:config:edit'),
+  ('SUPER_ADMIN', 'platform:log:list'), ('SUPER_ADMIN', 'platform:overview:view');
+
+-- 整机库存：叫号主机现货1台（订单要2台时演示"先组装再派发"）
+INSERT INTO machine_stock (equipment_type, model, qty, create_time) VALUES
+  ('叫号主机', 'QM-2000', 1, NOW()),
+  ('叫号屏',   'QS-55A',  2, NOW()),
+  ('取号机',   'QT-100',  0, NOW());
+
+-- 功能开关：驻场工程师默认开启（演示"平台端一键启停"）
+INSERT INTO sys_feature (feature_key, name, enabled, remark, create_time) VALUES
+  ('resident_engineer', '驻场工程师模式', 1, '开启后可在人事管理配置驻场，派单时驻场工程师置顶推荐', NOW());
+
+-- 业务参数（原 yml 写死值迁入，平台端可改即刻生效）
+INSERT INTO sys_param (param_key, param_value, name, create_time) VALUES
+  ('charge.visit_fee',     '200', '按次收费·上门费(元)', NOW()),
+  ('charge.labor_fee',     '300', '按次收费·维修费默认(元)', NOW()),
+  ('contract.remind_days', '7',   '合同到期提前提醒天数', NOW());
+
+-- 数据字典（可配置平台第一批：客户类型/备件分类/设备类型）
+INSERT INTO sys_dict (dict_type, dict_value, dict_label, sort, create_time) VALUES
+  ('customer_type', 'HOSPITAL', '医院', 1, NOW()),
+  ('customer_type', 'CLINIC',   '诊所', 2, NOW()),
+  ('customer_type', 'SCHOOL',   '学校', 3, NOW()),
+  ('customer_type', 'FACTORY',  '工厂', 4, NOW()),
+  ('part_category', 'PART',       '配件', 1, NOW()),
+  ('part_category', 'COMPONENT',  '部件', 2, NOW()),
+  ('part_category', 'CONSUMABLE', '耗材', 3, NOW()),
+  ('equipment_type', '叫号主机', '叫号主机', 1, NOW()),
+  ('equipment_type', '叫号屏',   '叫号屏', 2, NOW()),
+  ('equipment_type', '取号机',   '取号机', 3, NOW());
 
 INSERT INTO customer (id, name, customer_type, contact_name, contact_phone, address, create_time) VALUES
   (1, '市第一人民医院', 'HOSPITAL', '王信息', '13800000001', '示例市中心大道1号', NOW()),
   (2, '康泰社区诊所',   'CLINIC',   '刘主任', '13900000002', '示例市幸福路88号', NOW());
 
-INSERT INTO equipment (id, customer_id, equipment_type, model, serial_no, location, status, create_time) VALUES
-  (1, 1, '叫号主机', 'QM-2000', 'SN-QM2000-0001', '门诊大厅一楼', 'NORMAL', NOW()),
-  (2, 1, '叫号屏',   'QS-55A',  'SN-QS55A-0007',  '内科二诊室门口', 'NORMAL', NOW()),
-  (3, 2, '取号机',   'QT-100',  'SN-QT100-0033',  '诊所大厅', 'NORMAL', NOW());
+INSERT INTO equipment (id, customer_id, equipment_type, model, serial_no, location, status, delivered_at, create_time) VALUES
+  (1, 1, '叫号主机', 'QM-2000', 'SN-QM2000-0001', '门诊大厅一楼',   'NORMAL', '2025-08-15', NOW()),
+  (2, 1, '叫号屏',   'QS-55A',  'SN-QS55A-0007',  '内科二诊室门口', 'NORMAL', '2025-08-15', NOW()),
+  (3, 2, '取号机',   'QT-100',  'SN-QT100-0033',  '诊所大厅',       'NORMAL', '2026-01-10', NOW());
 
 INSERT INTO software_instance (id, customer_id, equipment_id, name, version, create_time) VALUES
   (1, 1, 1, '叫号系统', 'v3.2.1', NOW()),

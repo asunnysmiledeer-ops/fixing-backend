@@ -4,8 +4,11 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.fixing.common.BaseEntity;
+import com.baomidou.mybatisplus.annotation.TableField;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
+
+import java.time.LocalDate;
 
 /**
  * 设备实体。equipmentType 同时是备件"动态阈值"的匹配键。
@@ -30,4 +33,11 @@ public class Equipment extends BaseEntity {
 
     /** NORMAL/FAULT/SCRAPPED */
     private String status;
+
+    /** 运送/交付日期（查询系统的筛选维度之一） */
+    private LocalDate deliveredAt;
+
+    /** 维修次数（查询时按工单统计的计算列，表里没有对应字段） */
+    @TableField(exist = false)
+    private Long repairCount;
 }

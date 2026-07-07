@@ -26,15 +26,17 @@ import java.util.List;
 public class ContractExpiryNotifier {
 
     private final ContractMapper contractMapper;
+    private final ContractService contractService;
 
-    public ContractExpiryNotifier(ContractMapper contractMapper) {
+    public ContractExpiryNotifier(ContractMapper contractMapper, ContractService contractService) {
         this.contractMapper = contractMapper;
+        this.contractService = contractService;
     }
 
     @Scheduled(cron = "0 0 9 * * ?")
     public void notifyExpiring() {
         LocalDate today = LocalDate.now();
-        LocalDate deadline = today.plusDays(ContractService.REMIND_DAYS);
+        LocalDate deadline = today.plusDays(contractService.remindDays());
 
         // 生效中、且 endDate 落在 [今天, 今天+7天] 区间的合同
         List<Contract> expiring = contractMapper.selectList(new LambdaQueryWrapper<Contract>()
@@ -48,7 +50,7 @@ public class ContractExpiryNotifier {
                     c.getCustomerId(), c.getName(), c.getEndDate());
         }
         if (expiring.isEmpty()) {
-            log.info("[合同到期检查] 今日无 {} 天内到期的合同", ContractService.REMIND_DAYS);
+            log.info("[合同到期检查] 今日无 {} 天内到期的合同", contractService.remindDays());
         }
     }
 }

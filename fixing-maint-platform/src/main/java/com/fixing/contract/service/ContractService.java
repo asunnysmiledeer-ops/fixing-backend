@@ -22,18 +22,21 @@ import java.util.List;
 @Service
 public class ContractService {
 
-    /** 到期前几天开始提醒 */
+    /** 到期前几天开始提醒（默认值；实际值走平台参数 contract.remind_days，可在平台端改） */
     public static final int REMIND_DAYS = 7;
 
+    private final com.fixing.platform.service.ParamService paramService;
     private final ContractMapper contractMapper;
     private final ContractEquipmentMapper contractEquipmentMapper;
     private final ContractPartMapper contractPartMapper;
     private final ContractSoftwareMapper contractSoftwareMapper;
 
-    public ContractService(ContractMapper contractMapper,
+    public ContractService(com.fixing.platform.service.ParamService paramService,
+                           ContractMapper contractMapper,
                            ContractEquipmentMapper contractEquipmentMapper,
                            ContractPartMapper contractPartMapper,
                            ContractSoftwareMapper contractSoftwareMapper) {
+        this.paramService = paramService;
         this.contractMapper = contractMapper;
         this.contractEquipmentMapper = contractEquipmentMapper;
         this.contractPartMapper = contractPartMapper;
@@ -106,6 +109,11 @@ public class ContractService {
         return dto;
     }
 
+    /** 提醒窗口天数（平台参数 contract.remind_days 可配，REMIND_DAYS 兜底） */
+    public int remindDays() {
+        return paramService.getInt("contract.remind_days", REMIND_DAYS);
+    }
+
     public void terminate(Long id) {
         Contract contract = contractMapper.selectById(id);
         if (contract == null) {
@@ -132,7 +140,7 @@ public class ContractService {
         }
         LocalDate latestEnd = valid.stream().map(Contract::getEndDate).max(LocalDate::compareTo).orElseThrow();
         long daysLeft = ChronoUnit.DAYS.between(today, latestEnd);
-        if (daysLeft <= REMIND_DAYS) {
+        if (daysLeft <= remindDays()) {
             return new ServiceNotice("EXPIRING",
                     "您的维保合同将于 " + latestEnd + " 到期（剩 " + daysLeft + " 天），到期后报修将按次收费，请及时续约",
                     (int) daysLeft);

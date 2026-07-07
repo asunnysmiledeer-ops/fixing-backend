@@ -15,6 +15,7 @@ let softwares = [];
 let parts = [];
 let users = [];           // 工程师下拉等（管理端）
 let uploadedPhotos = [];
+let features = [];   // 启用中的功能键（平台开关控制入口显隐）
 let selectedType = 'HARDWARE';
 
 const STATUS_META = {
@@ -34,17 +35,23 @@ const ACTION_MAP = {
   confirm: '确认完工', reject: '驳回', cancel: '取消', use_part: '领用备件', charge: '生成结算',
 };
 const CAT_CN = { PART: '配件', COMPONENT: '部件', CONSUMABLE: '耗材' };
-const ROLE_CN = { CUSTOMER: '客户', ADMIN: '管理员', ENGINEER: '工程师' };
+const ROLE_CN = { SUPER_ADMIN: '平台超管', CUSTOMER: '客户', ADMIN: '管理员', ENGINEER: '工程师' };
 
 /** 页签声明：perm 满足才渲染（权限字符串驱动 UI 的落点） */
 const TABS = [
-  { panel: 'create',    label: '➕ 我要报修', perm: 'maint:ticket:add',    load: () => {}, hideFor: 'ADMIN' },
+  { panel: 'create',    label: '➕ 我要报修', perm: 'maint:ticket:add',    load: () => {}, hideFor: ['ADMIN', 'SUPER_ADMIN'] },
   { panel: 'tickets',   label: '📋 工单',     perm: 'maint:ticket:list',   load: loadTickets },
   { panel: 'dashboard', label: '📊 数据看板', perm: 'maint:dashboard:view', load: loadDashboard },
   { panel: 'inventory', label: '📦 备件库存', perm: 'maint:part:list',     load: loadInventory },
   { panel: 'ledger',    label: '🏥 客户与设备', perm: 'maint:customer:list', load: loadLedger },
   { panel: 'contracts', label: '📄 合同',     perm: 'maint:contract:list', load: loadContracts },
   { panel: 'invoices',  label: '🧾 发票',     perm: 'maint:invoice:list',  load: loadInvoices },
+  { panel: 'orders',    label: '📦 订单派发', perm: 'maint:order:list',    load: loadOrders },
+  // ── 平台管理端（超管专属，同一套权限驱动机制）──
+  { panel: 'plat-users',  label: '👥 平台·人事', perm: 'platform:user:list',   load: loadPlatUsers },
+  { panel: 'plat-perms',  label: '🔑 平台·权限', perm: 'platform:perm:list',   load: loadPermMatrix },
+  { panel: 'plat-config', label: '⚙️ 平台·配置', perm: 'platform:config:list', load: loadPlatConfig },
+  { panel: 'plat-trace',  label: '🛰 平台·追踪', perm: 'platform:log:list',    load: loadPlatTrace },
 ];
 
 // ════════════ 基础工具 ════════════
@@ -131,6 +138,7 @@ async function init() {
     jobs.push(api('/equipments').then(d => equipments = d).catch(() => {}));
   if (has('maint:part:list')) jobs.push(api('/spare-parts').then(d => parts = d));
   if (has('maint:ticket:assign')) jobs.push(api('/users').then(d => users = d));
+  jobs.push(api('/platform/features/enabled').then(d => features = d).catch(() => {}));
   await Promise.allSettled(jobs);
 
   renderTabs();
@@ -144,7 +152,7 @@ async function init() {
 
 /** 页签 = 权限的投影 */
 function renderTabs() {
-  const visible = TABS.filter(t => has(t.perm) && t.hideFor !== me.role);
+  const visible = TABS.filter(t => has(t.perm) && !(t.hideFor ?? []).includes(me.role));
   const nav = document.getElementById('tabsNav');
   nav.innerHTML = visible.map((t, i) =>
     `<button class="tab${i === 0 ? ' active' : ''}" data-panel="${t.panel}">${t.label}</button>`).join('');
@@ -327,7 +335,9 @@ async function openTicket(id) {
       <div><b>状态</b><span class="status-tag ${t.status}">${STATUS_META[t.status].label}</span></div>
       <div><b>类型</b>${TYPE_META[t.type]?.label ?? t.type}</div>
       <div><b>客户</b>${me.role === 'CUSTOMER' ? '本单位' : esc(customerName(t.customerId))}</div>
-      <div><b>设备</b>${esc(equipmentName(t.equipmentId))}</div>
+      <div><b>设备</b>${esc(equipmentName(t.equipmentId))}
+        ${t.equipmentId && has('maint:equipment:list')
+          ? `<button class="btn" style="padding:2px 10px;font-size:12px;margin-left:6px" onclick="openEquipProfile(${t.equipmentId})">📋 设备档案</button>` : ''}</div>
       <div><b>软件</b>${t.softwareInstanceId ? esc(softwares.find(s => s.id === t.softwareInstanceId)?.name ?? '#' + t.softwareInstanceId) : '—'}</div>
       <div><b>联系人</b>${esc(t.contactName ?? '—')} ${esc(t.contactPhone ?? '')}</div>
       <div><b>创建时间</b>${fmtTime(t.createTime)}</div>
@@ -353,8 +363,17 @@ function closeModal() { document.getElementById('modalMask').classList.add('hidd
 /** 动作按钮 = 权限字符串 × 工单状态；对象级校验（是不是你的单）在后端 */
 function renderActions(t, coverage) {
   const html = [];
-  const engineers = users.filter(u => u.role === 'ENGINEER');
-  const engineerOpts = engineers.map(e => `<option value="${e.id}">${esc(e.realName)}</option>`).join('');
+  // 驻场工程师模式（平台开关）：该客户的驻场工程师置顶并加 🏠 标记
+  let engineers = users.filter(u => u.role === 'ENGINEER' && u.status !== '1');
+  const residentOn = features.includes('resident_engineer');
+  if (residentOn) {
+    engineers = [...engineers].sort((a, b) =>
+      (b.residentCustomerId === t.customerId ? 1 : 0) - (a.residentCustomerId === t.customerId ? 1 : 0));
+  }
+  const engineerOpts = engineers.map(e => {
+    const resident = residentOn && e.residentCustomerId === t.customerId;
+    return `<option value="${e.id}">${resident ? '🏠 ' : ''}${esc(e.realName)}${resident ? '（驻场）' : ''}</option>`;
+  }).join('');
   const partOpts = parts.map(p => {
     const free = coverage.covered && coverage.freePartNames?.includes(p.name);
     return `<option value="${p.id}">${esc(p.name)}（库存${p.stockQty}${free ? '·免费' : '·计费'}）</option>`;
@@ -559,19 +578,84 @@ async function savePart() {
 // ════════════ 台账（客户/设备/软件） ════════════
 
 async function loadLedger() {
-  const [cs, eqs, sws] = await Promise.all([
-    api('/customers'), api('/equipments'), api('/softwares'),
+  const [cs, sws, types] = await Promise.all([
+    api('/customers'), api('/softwares'),
+    api('/platform/dicts?type=equipment_type').catch(() => []),
   ]);
   customers = cs;
   document.querySelector('#customerTable tbody').innerHTML = cs.map(c => `
     <tr><td>${c.id}</td><td>${esc(c.name)}</td><td>${esc(c.customerType)}</td>
     <td>${esc(c.contactName ?? '')}</td><td>${esc(c.contactPhone ?? '')}</td><td>${esc(c.address ?? '')}</td></tr>`).join('');
-  document.querySelector('#equipmentTable tbody').innerHTML = eqs.map(e => `
-    <tr><td>${e.id}</td><td>${esc(customerName(e.customerId))}</td><td>${esc(e.equipmentType)}</td>
-    <td>${esc(e.model ?? '')}</td><td>${esc(e.serialNo)}</td><td>${esc(e.location ?? '')}</td></tr>`).join('');
+  // 类型下拉走字典（平台端新增一条 = 这里多一个选项）
+  const dictOpts = (types.data ?? types ?? []);
+  document.getElementById('qType').innerHTML = '<option value="">全部类型</option>' +
+    dictOpts.map(d => `<option value="${esc(d.dictValue)}">${esc(d.dictLabel)}</option>`).join('');
   document.querySelector('#softwareTable tbody').innerHTML = sws.map(s => `
     <tr><td>${s.id}</td><td>${esc(customerName(s.customerId))}</td><td>${esc(s.name)}</td>
     <td>${esc(s.version ?? '')}</td><td>${s.equipmentId ? '设备#' + s.equipmentId : '—'}</td></tr>`).join('');
+  searchEquipments();
+}
+
+/** 设备查询：序列号模糊 + 运送时间区间 + 类型（后端隔离客户数据） */
+async function searchEquipments() {
+  const p = new URLSearchParams();
+  const v = id => document.getElementById(id).value;
+  if (v('qSerial')) p.set('serialNo', v('qSerial'));
+  if (v('qFrom')) p.set('deliveredFrom', v('qFrom'));
+  if (v('qTo')) p.set('deliveredTo', v('qTo'));
+  if (v('qType')) p.set('equipmentType', v('qType'));
+  const eqs = await api('/equipments?' + p.toString());
+  equipments = eqs;
+  document.querySelector('#equipmentTable tbody').innerHTML = eqs.length ? eqs.map(e => `
+    <tr style="cursor:pointer" onclick="openEquipProfile(${e.id})">
+      <td style="font-family:ui-monospace,monospace;font-size:12px">${esc(e.serialNo)}</td>
+      <td>${esc(customerName(e.customerId))}</td>
+      <td>${esc(e.equipmentType)} ${esc(e.model ?? '')}</td>
+      <td>${esc(e.location ?? '')}</td>
+      <td>${e.deliveredAt ?? '—'}</td>
+      <td>${e.repairCount > 0 ? `<b style="color:var(--orange)">${e.repairCount} 次</b>` : '0 次'}</td>
+    </tr>`).join('') : '<tr><td colspan="6" style="color:#8e8e93">没有符合条件的设备</td></tr>';
+}
+function resetEquipSearch() {
+  ['qSerial','qFrom','qTo','qType'].forEach(id => document.getElementById(id).value = '');
+  searchEquipments();
+}
+
+/** 设备档案：基本信息/适用部件/已装软件/维修统计与原因/换件历史（工单详情里工程师也走这里） */
+async function openEquipProfile(id) {
+  const d = await api(`/equipments/${id}/profile`);
+  const e = d.equipment;
+  document.getElementById('eqTitle').textContent = `设备档案 · ${e.serialNo}`;
+  document.getElementById('eqBody').innerHTML = `
+    <div class="detail-grid">
+      <div><b>类型/型号</b>${esc(e.equipmentType)} ${esc(e.model ?? '')}</div>
+      <div><b>状态</b>${esc(e.status)}</div>
+      <div><b>客户</b>${esc(d.customerName ?? '—')}</div>
+      <div><b>位置</b>${esc(e.location ?? '—')}</div>
+      <div><b>运送时间</b>${e.deliveredAt ?? '—'}</div>
+      <div><b>维修次数</b><b style="color:${d.repairCount > 2 ? 'var(--red)' : 'var(--text)'}">${d.repairCount} 次</b></div>
+      <div style="grid-column:1/3"><b>地址</b>${esc(d.customerAddress ?? '—')}</div>
+    </div>
+    <h4 style="font-size:14px;margin:12px 0 6px">🔩 适用部件（库存）</h4>
+    ${d.applicableParts.length ? `<div>${d.applicableParts.map(p =>
+      `<span class="status-tag" style="margin:0 6px 6px 0">${esc(p.name)} · 库存${p.stockQty}</span>`).join('')}</div>`
+      : '<span style="color:#8e8e93;font-size:13px">无专用部件（通用耗材见库存页）</span>'}
+    <h4 style="font-size:14px;margin:14px 0 6px">💻 已装软件</h4>
+    ${d.softwares.length ? d.softwares.map(sw =>
+      `<span class="status-tag IN_PROGRESS" style="margin-right:6px">${esc(sw.name)} ${esc(sw.version ?? '')}</span>`).join('')
+      : '<span style="color:#8e8e93;font-size:13px">无</span>'}
+    <h4 style="font-size:14px;margin:14px 0 6px">🛠 维修记录与原因（${d.repairCount} 次）</h4>
+    ${d.repairTickets.length ? `<table><thead><tr><th>工单号</th><th>原因(标题)</th><th>状态</th><th>时间</th></tr></thead><tbody>
+      ${d.repairTickets.map(t => `<tr>
+        <td style="font-size:12px">${esc(t.ticketNo)}</td><td>${esc(t.title)}</td>
+        <td><span class="status-tag ${t.status}">${STATUS_META[t.status]?.label ?? t.status}</span></td>
+        <td style="font-size:12px">${fmtTime(t.createTime)}</td></tr>`).join('')}</tbody></table>`
+      : '<span style="color:#8e8e93;font-size:13px">无维修记录 ✅</span>'}
+    <h4 style="font-size:14px;margin:14px 0 6px">🔧 换件历史</h4>
+    ${d.partUsages.length ? d.partUsages.map(u =>
+      `<div style="font-size:12.5px;padding:3px 0">${fmtTime(u.createTime)} · ${esc(u.partName)} ×${u.qty} ${u.billable ? '<span style="color:var(--orange)">(计费)</span>' : '<span style="color:var(--green)">(合同内)</span>'}</div>`).join('')
+      : '<span style="color:#8e8e93;font-size:13px">未换过件</span>'}`;
+  document.getElementById('equipMask').classList.remove('hidden');
 }
 
 // ════════════ 合同（颗粒化绑定） ════════════
@@ -709,6 +793,292 @@ async function loadDashboard() {
     ? d.expiringContracts.map(c => `<tr><td>${esc(customerName(c.customerId))}</td><td>${esc(c.name)}</td>
         <td style="color:var(--orange)">${c.endDate} 到期</td></tr>`).join('')
     : '<tr><td style="color:#8e8e93">近期无到期合同 ✅</td></tr>';
+}
+
+// ════════════ 订单派发（超管录单 → 管理员组装/派发） ════════════
+
+let dispatchOrder = null;
+let machines = [];
+
+async function loadOrders() {
+  const [orders, ms] = await Promise.all([api('/orders'), api('/machines')]);
+  machines = ms;
+  document.querySelector('#orderTable tbody').innerHTML = orders.length ? orders.map(o => `
+    <tr>
+      <td style="font-size:12px">${esc(o.orderNo)}</td>
+      <td>${esc(customerName(o.customerId))}</td>
+      <td>${o.orderType === 'MACHINE' ? '🖥 ' + esc(o.model) : '💿 ' + esc(o.softwareName) + ' ' + esc(o.softwareVersion ?? '')}</td>
+      <td>×${o.qty}</td>
+      <td>${o.status === 'PENDING' ? '<span class="status-tag PENDING_CONFIRM">待派发</span>' : '<span class="status-tag COMPLETED">已派发</span>'}</td>
+      <td>${o.status === 'PENDING' && has('maint:order:dispatch')
+        ? `<button class="btn btn-primary" onclick='openDispatch(${JSON.stringify(o)})'>派 发</button>` : ''}</td>
+    </tr>`).join('') : '<tr><td colspan="6" style="color:#8e8e93">暂无订单</td></tr>';
+  document.querySelector('#machineTable tbody').innerHTML = ms.map(m => `
+    <tr><td><b>${esc(m.model)}</b></td><td>${esc(m.equipmentType)}</td>
+    <td>${m.qty === 0 ? '<span style="color:var(--red);font-weight:700">0 台（需组装）</span>' : m.qty + ' 台'}</td></tr>`).join('');
+}
+
+function openOrderForm() {
+  document.getElementById('oCustomer').innerHTML = customers.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+  document.getElementById('oModel').innerHTML = machines.map(m => `<option value="${esc(m.model)}">${esc(m.model)}（现货${m.qty}台）</option>`).join('');
+  document.getElementById('orderMask').classList.remove('hidden');
+}
+function orderTypeChange() {
+  const isM = document.getElementById('oType').value === 'MACHINE';
+  document.getElementById('rowOModel').classList.toggle('hidden', !isM);
+  document.getElementById('rowOQty').classList.toggle('hidden', !isM);
+  document.getElementById('rowOSoft').classList.toggle('hidden', isM);
+}
+async function saveOrder() {
+  try {
+    const isM = document.getElementById('oType').value === 'MACHINE';
+    await api('/orders', 'POST', {
+      customerId: Number(document.getElementById('oCustomer').value),
+      orderType: document.getElementById('oType').value,
+      model: isM ? document.getElementById('oModel').value : null,
+      qty: isM ? Number(document.getElementById('oQty').value) : 1,
+      softwareName: isM ? null : document.getElementById('oSoftName').value,
+      softwareVersion: isM ? null : document.getElementById('oSoftVer').value,
+      remark: document.getElementById('oRemark').value || null,
+    });
+    toast('订单已创建，等待管理员派发');
+    document.getElementById('orderMask').classList.add('hidden');
+    loadOrders();
+  } catch (e) { toast(e.message, true); }
+}
+
+/** 派发弹窗：整机=每台一个序列号输入框；软件=可选安装设备 */
+function openDispatch(order) {
+  dispatchOrder = order;
+  document.getElementById('dispatchTitle').textContent = `派发 ${order.orderNo}`;
+  if (order.orderType === 'MACHINE') {
+    document.getElementById('dispatchBody').innerHTML =
+      `<div class="form-hint" style="margin:0 0 10px">整机 ${esc(order.model)} ×${order.qty} → ${esc(customerName(order.customerId))}（每台录入序列号）</div>` +
+      Array.from({ length: order.qty }, (_, i) =>
+        `<div class="form-row"><label>序列号${i + 1}</label><input class="dispatchSerial" placeholder="SN-..."></div>`).join('') +
+      `<div class="form-row"><label>安装位置</label><input id="dispatchLocation" placeholder="如 门诊三楼"></div>`;
+  } else {
+    document.getElementById('dispatchBody').innerHTML =
+      `<div class="form-hint" style="margin:0 0 10px">软件 ${esc(order.softwareName)} → ${esc(customerName(order.customerId))}</div>
+       <div class="form-row"><label>装到设备</label><select id="dispatchEquip"><option value="">— 不关联 —</option></select></div>`;
+    api('/equipments?customerId=' + order.customerId).then(eqs => {
+      document.getElementById('dispatchEquip').innerHTML = '<option value="">— 不关联 —</option>' +
+        eqs.map(e => `<option value="${e.id}">${esc(e.equipmentType)} ${esc(e.serialNo)}</option>`).join('');
+    });
+  }
+  document.getElementById('dispatchMask').classList.remove('hidden');
+}
+async function confirmDispatch() {
+  try {
+    if (dispatchOrder.orderType === 'MACHINE') {
+      const serials = [...document.querySelectorAll('.dispatchSerial')].map(i => i.value.trim());
+      if (serials.some(x => !x)) return toast('请为每台机器填写序列号', true);
+      await api(`/orders/${dispatchOrder.id}/dispatch-machine`, 'POST', {
+        serialNos: serials, location: document.getElementById('dispatchLocation').value || null,
+      });
+    } else {
+      const eid = document.getElementById('dispatchEquip').value;
+      await api(`/orders/${dispatchOrder.id}/dispatch-software`, 'POST', { equipmentId: eid ? Number(eid) : null });
+    }
+    toast('派发成功：设备/软件已入客户档案，安装工单已生成（待派单）');
+    document.getElementById('dispatchMask').classList.add('hidden');
+    loadOrders();
+  } catch (e) { toast(e.message, true); }
+}
+
+/** 组装弹窗：勾选消耗配件 + 数量 */
+function openAssembleForm() {
+  document.getElementById('aMachine').innerHTML = machines.map(m =>
+    `<option value="${m.id}">${esc(m.model)}（现有${m.qty}台）</option>`).join('');
+  document.getElementById('aParts').innerHTML = parts.map(p => `
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;font-size:13px">
+      <input type="checkbox" class="asmCk" value="${p.id}">
+      <span style="flex:1">${esc(p.name)}（库存${p.stockQty}）</span>
+      <input type="number" class="asmQty" data-part="${p.id}" value="1" min="1" style="width:64px;padding:4px 8px;border:1px solid var(--separator);border-radius:8px">
+    </div>`).join('');
+  document.getElementById('assembleMask').classList.remove('hidden');
+}
+async function confirmAssemble() {
+  try {
+    const partsSel = [...document.querySelectorAll('.asmCk:checked')].map(ck => ({
+      partId: Number(ck.value),
+      qty: Number(document.querySelector(`.asmQty[data-part="${ck.value}"]`).value),
+    }));
+    await api('/machines/assemble', 'POST', {
+      machineStockId: Number(document.getElementById('aMachine').value),
+      qty: Number(document.getElementById('aMachineQty').value),
+      parts: partsSel,
+      remark: document.getElementById('aRemark').value || null,
+    });
+    toast('组装完成：整机入库，消耗配件已扣减');
+    document.getElementById('assembleMask').classList.add('hidden');
+    parts = await api('/spare-parts');
+    loadOrders();
+  } catch (e) { toast(e.message, true); }
+}
+
+// ════════════ 平台管理端（超管） ════════════
+
+const ROLE_TAG = {
+  SUPER_ADMIN: '<span class="badge P0">超管</span>', ADMIN: '<span class="badge P3">运营</span>',
+  ENGINEER: '<span class="badge P2">工程师</span>', CUSTOMER: '<span class="badge P4">客户</span>',
+};
+
+async function loadPlatUsers() {
+  const [list, cs] = await Promise.all([api('/platform/users'), api('/customers').catch(() => customers)]);
+  customers = cs;
+  const residentOn = features.includes('resident_engineer');
+  document.querySelector('#platUserTable tbody').innerHTML = list.map(u => {
+    const belong = u.role === 'CUSTOMER' ? customerName(u.customerId)
+      : (u.residentCustomerId ? '🏠 驻场·' + customerName(u.residentCustomerId) : '—');
+    const ops = u.role === 'SUPER_ADMIN' ? '' : `
+      <button class="btn" onclick="toggleUser(${u.id})">${u.status === '1' ? '启用' : '停用'}</button>
+      <button class="btn" onclick="resetPwd(${u.id})">重置密码</button>
+      ${u.role === 'ENGINEER' && residentOn ? `<button class="btn" onclick="setResident(${u.id})">设驻场</button>` : ''}`;
+    return `<tr${u.status === '1' ? ' style="opacity:.45"' : ''}>
+      <td>${esc(u.username)}</td><td>${esc(u.realName ?? '')}</td><td>${ROLE_TAG[u.role] ?? u.role}</td>
+      <td>${esc(belong)}</td>
+      <td>${u.status === '1' ? '<span class="status-tag CANCELLED">已停用</span>' : '<span class="status-tag COMPLETED">正常</span>'}</td>
+      <td style="display:flex;gap:6px">${ops}</td>
+    </tr>`;
+  }).join('');
+}
+
+function openUserForm() {
+  document.getElementById('uCustomer').innerHTML =
+    customers.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+  document.getElementById('userMask').classList.remove('hidden');
+}
+
+async function saveUser() {
+  try {
+    await api('/platform/users', 'POST', {
+      username: document.getElementById('uUsername').value.trim(),
+      realName: document.getElementById('uRealName').value,
+      role: document.getElementById('uRole').value,
+      customerId: document.getElementById('uRole').value === 'CUSTOMER'
+        ? Number(document.getElementById('uCustomer').value) : null,
+    });
+    toast('账号已创建（默认密码 123456）');
+    document.getElementById('userMask').classList.add('hidden');
+    loadPlatUsers();
+  } catch (e) { toast(e.message, true); }
+}
+
+async function toggleUser(id) {
+  try { const r = await api(`/platform/users/${id}/toggle-status`, 'POST', {});
+    toast(r.status === '1' ? '已停用（该账号即刻无法访问）' : '已启用'); loadPlatUsers();
+  } catch (e) { toast(e.message, true); }
+}
+async function resetPwd(id) {
+  try { await api(`/platform/users/${id}/reset-password`, 'POST', {}); toast('密码已重置为 123456'); }
+  catch (e) { toast(e.message, true); }
+}
+async function setResident(id) {
+  const names = customers.map(c => `${c.id}=${c.name}`).join('，');
+  const cid = prompt(`驻场到哪个客户？输入客户ID（${names}），留空取消驻场：`);
+  if (cid === null) return;
+  try {
+    await api(`/platform/users/${id}/resident`, 'POST', { customerId: cid ? Number(cid) : null });
+    toast(cid ? '驻场已设置（该客户派单时置顶推荐）' : '已取消驻场');
+    users = await api('/users').catch(() => users); // 刷新派单下拉的数据源
+    loadPlatUsers();
+  } catch (e) { toast(e.message, true); }
+}
+
+// ── 权限矩阵：勾选即生效 ──
+async function loadPermMatrix() {
+  const { perms, byRole } = await api('/platform/perms/matrix');
+  const roles = Object.keys(byRole);
+  document.querySelector('#permMatrix thead').innerHTML =
+    '<tr><th>权限字符串</th>' + roles.map(r => `<th style="text-align:center">${ROLE_TAG[r] ?? r}</th>`).join('') + '</tr>';
+  document.querySelector('#permMatrix tbody').innerHTML = perms.map(p => `<tr>
+      <td style="font-family:ui-monospace,monospace;font-size:12px">${esc(p)}</td>
+      ${roles.map(r => `<td style="text-align:center">
+        <input type="checkbox" ${byRole[r].includes(p) ? 'checked' : ''}
+               onchange="togglePerm('${r}','${p}',this.checked)"></td>`).join('')}
+    </tr>`).join('');
+}
+
+async function togglePerm(role, perm, granted) {
+  try {
+    await api(`/platform/perms/${granted ? 'grant' : 'revoke'}`, 'POST', { role, perm });
+    toast(`${granted ? '已授予' : '已收回'} ${role} · ${perm}（即刻生效）`);
+  } catch (e) { toast(e.message, true); loadPermMatrix(); }
+}
+
+// ── 配置：开关 / 参数 / 字典 ──
+async function loadPlatConfig() {
+  const [fs, ps] = await Promise.all([api('/platform/features'), api('/platform/params')]);
+  document.querySelector('#featureTable tbody').innerHTML = fs.map(f => `<tr>
+      <td><b>${esc(f.name)}</b> <span style="color:var(--text-2);font-size:12px">${esc(f.remark ?? '')}</span></td>
+      <td style="width:120px;text-align:right">
+        <button class="btn ${f.enabled ? 'btn-success' : ''}" onclick="toggleFeature(${f.id})">
+          ${f.enabled ? '✓ 已启用' : '已关闭'}</button></td>
+    </tr>`).join('');
+  document.querySelector('#paramTable tbody').innerHTML = ps.map(p => `<tr>
+      <td>${esc(p.name)} <span style="color:var(--text-2);font-size:12px">${esc(p.paramKey)}</span></td>
+      <td style="width:220px"><span class="inline-form">
+        <input id="param-${p.id}" value="${esc(p.paramValue)}" style="width:110px">
+        <button class="btn" onclick="saveParam(${p.id})">保存</button></span></td>
+    </tr>`).join('');
+  loadDictTable();
+}
+
+async function toggleFeature(id) {
+  try {
+    const f = await api(`/platform/features/${id}/toggle`, 'POST', {});
+    toast(`${f.name} 已${f.enabled ? '启用' : '关闭'}（全平台入口即刻${f.enabled ? '出现' : '消失'}）`);
+    features = await api('/platform/features/enabled');
+    loadPlatConfig();
+  } catch (e) { toast(e.message, true); }
+}
+async function saveParam(id) {
+  try {
+    await api(`/platform/params/${id}`, 'POST', { value: document.getElementById('param-' + id).value });
+    toast('参数已保存，即刻生效');
+  } catch (e) { toast(e.message, true); }
+}
+
+const DICT_TYPE_CN = { customer_type: '客户类型', equipment_type: '设备类型', part_category: '备件分类' };
+async function loadDictTable() {
+  const dicts = await api('/platform/dicts/all');
+  document.querySelector('#dictTable tbody').innerHTML = dicts.map(d => `<tr>
+      <td style="width:110px">${DICT_TYPE_CN[d.dictType] ?? d.dictType}</td>
+      <td>${esc(d.dictLabel)} <span style="color:var(--text-2);font-size:12px">${esc(d.dictValue)}</span></td>
+      <td style="width:70px;text-align:right"><button class="btn btn-danger" onclick="delDict(${d.id})">删除</button></td>
+    </tr>`).join('');
+}
+async function addDict() {
+  try {
+    await api('/platform/dicts', 'POST', {
+      dictType: document.getElementById('dictTypeSel').value,
+      dictValue: document.getElementById('dictValue').value.trim(),
+      dictLabel: document.getElementById('dictLabel').value.trim(),
+    });
+    toast('字典已新增 —— 全平台相关下拉即刻多了这一项');
+    loadDictTable();
+  } catch (e) { toast(e.message, true); }
+}
+async function delDict(id) {
+  try { await api(`/platform/dicts/${id}/delete`, 'POST', {}); toast('已删除（软删）'); loadDictTable(); }
+  catch (e) { toast(e.message, true); }
+}
+
+// ── 追踪：总览 + 操作日志 ──
+async function loadPlatTrace() {
+  const [ov, logs] = await Promise.all([api('/platform/overview'), api('/platform/oper-logs')]);
+  document.getElementById('overviewCards').innerHTML = `
+    <div class="dash-card"><div class="lbl">客户 / 工程师</div><div class="num">${ov.customerCount} / ${ov.engineerCount}</div></div>
+    <div class="dash-card"><div class="lbl">工单总量</div><div class="num">${ov.ticketTotal}</div></div>
+    <div class="dash-card"><div class="lbl">合同回款</div><div class="num">${money(ov.paidInvoiceTotal)}</div></div>
+    <div class="dash-card"><div class="lbl">按次结算应收</div><div class="num">${money(ov.chargeTotal)}</div></div>`;
+  document.querySelector('#operLogTable tbody').innerHTML = logs.map(l => `<tr>
+      <td>${fmtTime(l.createTime)}</td><td>${esc(l.userName ?? '')}</td>
+      <td><span class="status-tag">${l.method}</span></td>
+      <td style="font-family:ui-monospace,monospace;font-size:12px">${esc(l.uri)}</td>
+      <td>${l.status < 400 ? '✅' : '❌ ' + l.status}</td><td>${l.costMs ?? '—'}ms</td>
+    </tr>`).join('');
 }
 
 init().catch(e => toast('初始化失败：' + e.message, true));

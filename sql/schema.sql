@@ -22,6 +22,8 @@ CREATE TABLE sys_user (
   role        VARCHAR(16)  NOT NULL COMMENT 'CUSTOMER/ADMIN/ENGINEER',
   real_name   VARCHAR(32),
   customer_id BIGINT COMMENT '客户角色所属单位（数据隔离的根）',
+  status      CHAR(1) NOT NULL DEFAULT '0' COMMENT '0正常 1停用（人事管理）',
+  resident_customer_id BIGINT COMMENT '工程师驻场客户（派单优先推荐，受平台开关控制）',
   create_by BIGINT NULL, create_time DATETIME, update_by BIGINT NULL, update_time DATETIME,
   tenant_id BIGINT NOT NULL DEFAULT 1, del_flag CHAR(1) NOT NULL DEFAULT '0'
 ) COMMENT '系统用户';
@@ -33,6 +35,49 @@ CREATE TABLE sys_role_perm (
   perm VARCHAR(64) NOT NULL COMMENT '权限字符串 如 maint:ticket:assign',
   UNIQUE KEY uk_role_perm (role, perm)
 ) COMMENT '角色-权限映射（改权限=改数据，不改代码）';
+
+DROP TABLE IF EXISTS sys_feature;
+CREATE TABLE sys_feature (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  feature_key VARCHAR(64) NOT NULL UNIQUE,
+  name VARCHAR(64) NOT NULL,
+  enabled TINYINT(1) NOT NULL DEFAULT 0,
+  remark VARCHAR(255),
+  create_by BIGINT NULL, create_time DATETIME, update_by BIGINT NULL, update_time DATETIME,
+  tenant_id BIGINT NOT NULL DEFAULT 1, del_flag CHAR(1) NOT NULL DEFAULT '0'
+) COMMENT '功能开关（平台端一键启停，不发版）';
+
+DROP TABLE IF EXISTS sys_param;
+CREATE TABLE sys_param (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  param_key VARCHAR(64) NOT NULL UNIQUE,
+  param_value VARCHAR(255),
+  name VARCHAR(64),
+  create_by BIGINT NULL, create_time DATETIME, update_by BIGINT NULL, update_time DATETIME,
+  tenant_id BIGINT NOT NULL DEFAULT 1, del_flag CHAR(1) NOT NULL DEFAULT '0'
+) COMMENT '业务参数（收费标准/提醒天数等，平台端可改即刻生效）';
+
+DROP TABLE IF EXISTS sys_dict;
+CREATE TABLE sys_dict (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  dict_type  VARCHAR(64) NOT NULL COMMENT 'customer_type/equipment_type/part_category',
+  dict_value VARCHAR(64) NOT NULL,
+  dict_label VARCHAR(64) NOT NULL,
+  sort INT NOT NULL DEFAULT 0,
+  create_by BIGINT NULL, create_time DATETIME, update_by BIGINT NULL, update_time DATETIME,
+  tenant_id BIGINT NOT NULL DEFAULT 1, del_flag CHAR(1) NOT NULL DEFAULT '0',
+  INDEX idx_dict_type (dict_type)
+) COMMENT '数据字典（可配置平台的核心：行业差异交给配置）';
+
+DROP TABLE IF EXISTS sys_oper_log;
+CREATE TABLE sys_oper_log (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  user_id BIGINT, user_name VARCHAR(32),
+  method VARCHAR(8), uri VARCHAR(255),
+  status INT, cost_ms BIGINT,
+  create_time DATETIME,
+  INDEX idx_ol_time (create_time)
+) COMMENT '操作日志（业务追踪：全部写操作自动记录）';
 
 DROP TABLE IF EXISTS customer;
 CREATE TABLE customer (
@@ -53,9 +98,10 @@ CREATE TABLE equipment (
   serial_no      VARCHAR(64)  NOT NULL UNIQUE,
   location       VARCHAR(128),
   status         VARCHAR(16)  NOT NULL DEFAULT 'NORMAL',
+  delivered_at   DATE COMMENT '运送/交付日期（查询筛选维度）',
   create_by BIGINT NULL, create_time DATETIME, update_by BIGINT NULL, update_time DATETIME,
   tenant_id BIGINT NOT NULL DEFAULT 1, del_flag CHAR(1) NOT NULL DEFAULT '0',
-  INDEX idx_eq_customer (customer_id)
+  INDEX idx_eq_customer (customer_id), INDEX idx_eq_serial (serial_no), INDEX idx_eq_delivered (delivered_at)
 ) COMMENT '设备台账';
 
 DROP TABLE IF EXISTS software_instance;
@@ -189,6 +235,53 @@ CREATE TABLE ticket_charge (
   tenant_id BIGINT NOT NULL DEFAULT 1, del_flag CHAR(1) NOT NULL DEFAULT '0',
   INDEX idx_tc_ticket (ticket_id)
 ) COMMENT '工单结算明细（不在保完工自动生成，M1新增）';
+
+DROP TABLE IF EXISTS machine_stock;
+CREATE TABLE machine_stock (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  equipment_type VARCHAR(32) NOT NULL,
+  model VARCHAR(64) NOT NULL UNIQUE,
+  qty INT NOT NULL DEFAULT 0 COMMENT '可派发整机数',
+  create_by BIGINT NULL, create_time DATETIME, update_by BIGINT NULL, update_time DATETIME,
+  tenant_id BIGINT NOT NULL DEFAULT 1, del_flag CHAR(1) NOT NULL DEFAULT '0',
+  CONSTRAINT chk_machine_qty CHECK (qty >= 0)
+) COMMENT '整机库存（入=组装 出=订单派发）';
+
+DROP TABLE IF EXISTS assembly_record;
+CREATE TABLE assembly_record (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  machine_stock_id BIGINT NOT NULL,
+  qty INT NOT NULL,
+  remark VARCHAR(255),
+  create_by BIGINT NULL, create_time DATETIME, update_by BIGINT NULL, update_time DATETIME,
+  tenant_id BIGINT NOT NULL DEFAULT 1, del_flag CHAR(1) NOT NULL DEFAULT '0'
+) COMMENT '组装记录（配件→整机）';
+
+DROP TABLE IF EXISTS assembly_part;
+CREATE TABLE assembly_part (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  assembly_id BIGINT NOT NULL,
+  part_id BIGINT NOT NULL,
+  qty INT NOT NULL,
+  unit_price DECIMAL(10,2) COMMENT '消耗时单价快照（组装成本）',
+  INDEX idx_ap_assembly (assembly_id)
+) COMMENT '组装消耗明细';
+
+DROP TABLE IF EXISTS sales_order;
+CREATE TABLE sales_order (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  order_no VARCHAR(32) NOT NULL UNIQUE,
+  customer_id BIGINT NOT NULL,
+  order_type VARCHAR(16) NOT NULL COMMENT 'MACHINE/SOFTWARE',
+  model VARCHAR(64) COMMENT '整机订单机型',
+  software_name VARCHAR(64), software_version VARCHAR(32),
+  qty INT NOT NULL DEFAULT 1,
+  remark VARCHAR(255),
+  status VARCHAR(16) NOT NULL DEFAULT 'PENDING' COMMENT 'PENDING待派发/DISPATCHED已派发',
+  create_by BIGINT NULL, create_time DATETIME, update_by BIGINT NULL, update_time DATETIME,
+  tenant_id BIGINT NOT NULL DEFAULT 1, del_flag CHAR(1) NOT NULL DEFAULT '0',
+  INDEX idx_so_status (status)
+) COMMENT '销售订单（超管录入，管理员派发）';
 
 DROP TABLE IF EXISTS part_request;
 CREATE TABLE part_request (

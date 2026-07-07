@@ -61,6 +61,9 @@ public class AuthInterceptor implements HandlerInterceptor {
         if (user == null) {
             return reject(response, 401, "账号不存在（可能已被删除）");
         }
+        if ("1".equals(user.getStatus())) {
+            return reject(response, 401, "账号已停用，请联系平台管理员"); // 停用即刻生效，不等令牌过期
+        }
         UserContext.set(user);
 
         // ── 2. 鉴权：@RequirePerm ──

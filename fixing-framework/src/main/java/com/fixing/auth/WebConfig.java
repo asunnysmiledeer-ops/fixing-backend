@@ -18,11 +18,14 @@ import java.nio.file.Path;
 public class WebConfig implements WebMvcConfigurer {
 
     private final AuthInterceptor authInterceptor;
+    private final com.fixing.framework.web.OperLogInterceptor operLogInterceptor;
     private final String uploadDir;
 
     public WebConfig(AuthInterceptor authInterceptor,
+                     com.fixing.framework.web.OperLogInterceptor operLogInterceptor,
                      @Value("${fixing.upload-dir:uploads}") String uploadDir) {
         this.authInterceptor = authInterceptor;
+        this.operLogInterceptor = operLogInterceptor;
         this.uploadDir = uploadDir;
     }
 
@@ -53,5 +56,7 @@ public class WebConfig implements WebMvcConfigurer {
                         // 接口文档（本机演示放开；对外部署时应关闭或加访问控制）
                         "/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**"
                 );
+        // 操作日志：认证之后（要拿登录人），全路径记非 GET 请求
+        registry.addInterceptor(operLogInterceptor).addPathPatterns("/**");
     }
 }

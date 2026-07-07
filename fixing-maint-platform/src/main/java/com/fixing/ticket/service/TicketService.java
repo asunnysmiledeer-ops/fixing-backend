@@ -18,7 +18,7 @@ import com.fixing.inventory.domain.SparePartUsage;
 import com.fixing.inventory.mapper.SparePartMapper;
 import com.fixing.inventory.mapper.SparePartUsageMapper;
 import com.fixing.inventory.service.InventoryService;
-import com.fixing.ticket.config.ChargeProperties;
+import com.fixing.platform.service.ParamService;
 import com.fixing.ticket.domain.Ticket;
 import com.fixing.ticket.domain.TicketCharge;
 import com.fixing.ticket.domain.TicketLog;
@@ -70,7 +70,7 @@ public class TicketService {
     private final InventoryService inventoryService;
     private final CoverageService coverageService;
     private final PriorityDecider priorityDecider;
-    private final ChargeProperties chargeProperties;
+    private final ParamService paramService;
 
     public TicketService(TicketMapper ticketMapper, TicketLogMapper logMapper,
                          TicketChargeMapper chargeMapper, SysUserMapper sysUserMapper,
@@ -79,7 +79,7 @@ public class TicketService {
                          SparePartMapper sparePartMapper, SparePartUsageMapper usageMapper,
                          ContractMapper contractMapper, ContractPartMapper contractPartMapper,
                          InventoryService inventoryService, CoverageService coverageService,
-                         PriorityDecider priorityDecider, ChargeProperties chargeProperties) {
+                         PriorityDecider priorityDecider, ParamService paramService) {
         this.ticketMapper = ticketMapper;
         this.logMapper = logMapper;
         this.chargeMapper = chargeMapper;
@@ -94,7 +94,7 @@ public class TicketService {
         this.inventoryService = inventoryService;
         this.coverageService = coverageService;
         this.priorityDecider = priorityDecider;
-        this.chargeProperties = chargeProperties;
+        this.paramService = paramService;
     }
 
     // ══════════════ 查询（数据隔离） ══════════════
@@ -144,7 +144,7 @@ public class TicketService {
         requireVisible(ticket, UserContext.current());
         if (!Boolean.TRUE.equals(ticket.getCovered())) {
             return new CoverageCard(false, null, null, null, null, List.of(),
-                    "不在保：按次收费（上门费 " + chargeProperties.getVisitFee()
+                    "不在保：按次收费（上门费 " + paramService.getDecimal("charge.visit_fee", "200")
                             + " 元 + 配件费 + 维修费）");
         }
         Contract contract = contractMapper.selectById(ticket.getContractId());
@@ -323,10 +323,13 @@ public class TicketService {
         }
         // 上门费 + 维修费：只有不在保的单收
         if (!covered) {
-            insertCharge(ticket.getId(), "VISIT", "上门费", chargeProperties.getVisitFee());
-            BigDecimal labor = laborFee != null ? laborFee : chargeProperties.getLaborFee();
+            // 收费标准从平台参数表读（平台端可改即刻生效），yml 不再写死
+            BigDecimal visit = paramService.getDecimal("charge.visit_fee", "200");
+            insertCharge(ticket.getId(), "VISIT", "上门费", visit);
+            BigDecimal labor = laborFee != null ? laborFee
+                    : paramService.getDecimal("charge.labor_fee", "300");
             insertCharge(ticket.getId(), "LABOR", "维修费", labor);
-            total = total.add(chargeProperties.getVisitFee()).add(labor);
+            total = total.add(visit).add(labor);
         }
         if (total.compareTo(BigDecimal.ZERO) > 0) {
             writeLog(ticket.getId(), TicketStatus.PENDING_CONFIRM, TicketStatus.PENDING_CONFIRM,
@@ -471,7 +474,7 @@ public class TicketService {
     /** 可见性：管理员全量；工程师=派给自己的；客户=自己单位的 */
     private void requireVisible(Ticket ticket, SysUser viewer) {
         boolean visible = switch (viewer.getRole()) {
-            case ADMIN -> true;
+            case SUPER_ADMIN, ADMIN -> true; // 平台超管/运营管理员全可见
             case ENGINEER -> viewer.getId().equals(ticket.getAssignedEngineerId());
             case CUSTOMER -> ticket.getCustomerId().equals(requireCustomerId(viewer));
         };

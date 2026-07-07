@@ -43,6 +43,7 @@ public class DashboardController {
     private final TicketMapper ticketMapper;
     private final InventoryService inventoryService;
     private final ContractMapper contractMapper;
+    private final ContractService contractService;
     private final InvoiceMapper invoiceMapper;
     private final TicketChargeMapper chargeMapper;
     private final SysUserMapper sysUserMapper;
@@ -50,12 +51,14 @@ public class DashboardController {
     private final ObjectMapper objectMapper;
 
     public DashboardController(TicketMapper ticketMapper, InventoryService inventoryService,
-                               ContractMapper contractMapper, InvoiceMapper invoiceMapper,
+                               ContractMapper contractMapper, ContractService contractService,
+                               InvoiceMapper invoiceMapper,
                                TicketChargeMapper chargeMapper, SysUserMapper sysUserMapper,
                                StringRedisTemplate redis, ObjectMapper objectMapper) {
         this.ticketMapper = ticketMapper;
         this.inventoryService = inventoryService;
         this.contractMapper = contractMapper;
+        this.contractService = contractService;
         this.invoiceMapper = invoiceMapper;
         this.chargeMapper = chargeMapper;
         this.sysUserMapper = sysUserMapper;
@@ -100,7 +103,7 @@ public class DashboardController {
         out.put("expiringContracts", contractMapper.selectList(new LambdaQueryWrapper<Contract>()
                 .eq(Contract::getStatus, "ACTIVE")
                 .ge(Contract::getEndDate, today)
-                .le(Contract::getEndDate, today.plusDays(ContractService.REMIND_DAYS))));
+                .le(Contract::getEndDate, today.plusDays(contractService.remindDays()))));
 
         List<Invoice> unpaid = invoiceMapper.selectList(new LambdaQueryWrapper<Invoice>()
                 .eq(Invoice::getStatus, "ISSUED"));

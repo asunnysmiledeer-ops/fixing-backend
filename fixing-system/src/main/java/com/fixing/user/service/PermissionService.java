@@ -29,8 +29,8 @@ public class PermissionService {
 
     /** 某角色的全部权限（登录响应下发给前端，驱动页签/按钮渲染） */
     public List<String> permsOf(UserRole role) {
-        if (role == UserRole.ADMIN) {
-            // 管理员 = 全量权限（去重）。selectObjs 只取单列，避免整行装配
+        if (role == UserRole.SUPER_ADMIN) {
+            // 超管 = 全量权限（去重）。selectObjs 只取单列，避免整行装配
             return rolePermMapper.selectObjs(new LambdaQueryWrapper<SysRolePerm>()
                             .select(SysRolePerm::getPerm))
                     .stream().map(String::valueOf).distinct().toList();
@@ -43,8 +43,8 @@ public class PermissionService {
 
     /** 拦截器调用：该角色是否拥有所需权限之一 */
     public boolean hasAny(UserRole role, String[] required) {
-        if (role == UserRole.ADMIN) {
-            return true; // 管理员短路
+        if (role == UserRole.SUPER_ADMIN) {
+            return true; // 唯一短路角色：平台超管。ADMIN 也走表 —— 运营权限同样可配
         }
         List<String> owned = permsOf(role);
         for (String need : required) {
