@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- fixing-common：纯基础类（统一返回/业务异常）。刻意不依赖 Spring Web —— 地基不绑定框架 -->
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent><groupId>com.fixing</groupId><artifactId>fixing</artifactId><version>0.2.0</version></parent>
+    <artifactId>fixing-common</artifactId>
+    <description>基础模块：统一返回、业务异常、实体基类</description>
+    <dependencies>
+        <!-- 只要注解不要框架：BaseEntity 的 @TableField/@TableLogic -->
+        <dependency><groupId>com.baomidou</groupId><artifactId>mybatis-plus-annotation</artifactId></dependency>
+    </dependencies>
+</project>

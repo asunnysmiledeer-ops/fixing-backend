@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- fixing-framework：技术底座（JWT/鉴权拦截器/权限注解/全局异常/文件上传）。对标 zzyl-framework
+     依赖 system：拦截器要把 SysUser 放进 UserContext（若依同款依赖方向 framework→system） -->
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent><groupId>com.fixing</groupId><artifactId>fixing</artifactId><version>0.2.0</version></parent>
+    <artifactId>fixing-framework</artifactId>
+    <description>技术底座：认证、权限、全局异常、文件上传</description>
+    <dependencies>
+        <dependency><groupId>com.fixing</groupId><artifactId>fixing-system</artifactId></dependency>
+        <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-web</artifactId></dependency>
+        <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-validation</artifactId></dependency>
+        <dependency><groupId>io.jsonwebtoken</groupId><artifactId>jjwt-api</artifactId></dependency>
+        <dependency><groupId>io.jsonwebtoken</groupId><artifactId>jjwt-impl</artifactId><scope>runtime</scope></dependency>
+        <dependency><groupId>io.jsonwebtoken</groupId><artifactId>jjwt-jackson</artifactId><scope>runtime</scope></dependency>
+        <dependency><groupId>org.springframework.security</groupId><artifactId>spring-security-crypto</artifactId></dependency>
+        <!-- Redis：登出令牌黑名单 + 看板缓存（M1 只用这两处，不做会话存储） -->
+        <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-data-redis</artifactId></dependency>
+        <!-- 接口文档：/swagger-ui.html（真实项目必须有文档；springfox 已停维护，SB3 用 springdoc） -->
+        <dependency><groupId>org.springdoc</groupId><artifactId>springdoc-openapi-starter-webmvc-ui</artifactId></dependency>
+    </dependencies>
+</project>

@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FIX-ING · 设备维保平台</title>
+<!--
+  FIX-ING M1 前端 —— 苹果风轻端（纯 HTML+JS，零构建）。
+  页签不再按角色硬编码：由登录返回的 perms 权限字符串驱动（TABS 里声明每个页签需要的权限）。
+  后台给角色加减权限 → 页面自动多/少一个页签，前端零改动 —— RBAC 思想落地。
+-->
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🔧</text></svg>">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">🔧 FIX-ING <span class="brand-sub">通用设备维保平台</span></div>
+  <div class="identity">
+    <span id="whoami"></span>
+    <button class="btn-logout" onclick="logout()">退出</button>
+  </div>
+</header>
+
+<!-- 服务状态横幅：合同 7 天内到期(黄) / 全部到期(红·提示按次收费，不拦截报修) -->
+<div id="serviceBanner" class="service-banner hidden"></div>
+
+<nav class="tabs" id="tabsNav"></nav>
+
+<main>
+
+  <!-- ═══ 报修（maint:ticket:add）═══ -->
+  <section id="panel-create" class="panel hidden">
+    <div class="card form-card">
+      <h2>提交报修 / 服务申请</h2>
+      <form id="createForm">
+        <div class="form-row hidden" id="rowCustomer">
+          <label>客户</label>
+          <select id="fCustomer"></select>
+        </div>
+        <div class="form-row">
+          <label>类型</label>
+          <div class="type-seg" id="typeSeg"></div>
+        </div>
+        <div class="form-hint" id="typeHint"></div>
+        <div class="form-row" id="rowEquipment">
+          <label>设备</label>
+          <select id="fEquipment"><option value="">— 请选择 —</option></select>
+        </div>
+        <div class="form-row hidden" id="rowSoftware">
+          <label>软件</label>
+          <select id="fSoftware"><option value="">— 请选择 —</option></select>
+        </div>
+        <div class="form-row">
+          <label>标题</label>
+          <input id="fTitle" required maxlength="128" placeholder="如：门诊大厅叫号主机黑屏">
+        </div>
+        <div class="form-row">
+          <label>描述</label>
+          <textarea id="fDesc" rows="3" placeholder="描述影响范围（全院停摆/单台故障…），系统自动判定优先级"></textarea>
+        </div>
+        <div class="form-row" id="rowFiles">
+          <label id="filesLabel">故障图片/视频</label>
+          <input id="fFiles" type="file" multiple accept="image/*,video/*">
+        </div>
+        <div id="filePreview" class="file-preview"></div>
+        <div class="form-row">
+          <label>联系人</label>
+          <input id="fContactName" placeholder="现场联系人">
+        </div>
+        <div class="form-row">
+          <label>电话</label>
+          <input id="fContactPhone" placeholder="手机号">
+        </div>
+        <button type="submit" class="btn btn-primary" id="createSubmit">提 交</button>
+      </form>
+    </div>
+  </section>
+
+  <!-- ═══ 工单（maint:ticket:list）：客户=列表，工程师/管理员=看板 ═══ -->
+  <section id="panel-tickets" class="panel hidden">
+    <div class="board-toolbar">
+      <span id="boardSummary" class="board-summary"></span>
+      <button class="btn" onclick="loadTickets()">刷新</button>
+    </div>
+    <div id="board" class="board hidden"></div>
+    <div id="ticketListWrap" class="card hidden">
+      <table id="myTicketsTable">
+        <thead><tr><th>工单号</th><th>类型</th><th>标题</th><th>优先级</th><th>状态</th><th>在保</th><th>提交时间</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ═══ 备件库存（maint:part:list）═══ -->
+  <section id="panel-inventory" class="panel hidden">
+    <div id="lowStockAlert" class="low-stock-alert hidden"></div>
+    <div class="card">
+      <h2 style="display:flex;justify-content:space-between;align-items:center">
+        <span>备件库存 <small>（动态阈值 = max(人工阈值, 每台备货数 × 在保签约设备数)）</small></span>
+        <span>
+          <button class="btn hidden" data-perm="maint:part:request" onclick="openRequestForm()">申请配件</button>
+          <button class="btn btn-primary hidden" data-perm="maint:part:edit" onclick="openPartForm()">新增备件</button>
+        </span>
+      </h2>
+      <table id="partsTable">
+        <thead><tr><th>名称</th><th>分类</th><th>适用设备</th><th>在保台数</th><th>库存</th><th>动态阈值</th><th>单价(元)</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div class="card">
+      <h2 id="requestTitle">配件申请</h2>
+      <table id="requestTable">
+        <thead><tr><th>时间</th><th>备件</th><th>数量</th><th>理由</th><th>状态</th><th id="requestOpTh"></th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div class="card">
+      <h2 id="usageTitle">领料流水</h2>
+      <table id="usageTable">
+        <thead><tr><th>时间</th><th>备件</th><th>数量</th><th>计费</th><th>工程师</th><th>工单</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ═══ 客户与设备（maint:customer:list）═══ -->
+  <section id="panel-ledger" class="panel hidden">
+    <div class="card">
+      <h2>客户台账</h2>
+      <table id="customerTable">
+        <thead><tr><th>ID</th><th>名称</th><th>类型</th><th>联系人</th><th>电话</th><th>地址</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div class="card">
+      <h2>设备台账 <small>（"添加机器"完工后在此登记 → 自动进入阈值基数）</small></h2>
+      <table id="equipmentTable">
+        <thead><tr><th>ID</th><th>客户</th><th>类型</th><th>型号</th><th>序列号</th><th>位置</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div class="card">
+      <h2>软件台账 <small>（"安装软件"完工后在此登记/升版本）</small></h2>
+      <table id="softwareTable">
+        <thead><tr><th>ID</th><th>客户</th><th>软件</th><th>版本</th><th>所在设备</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ═══ 合同（maint:contract:list）：颗粒化绑定 ═══ -->
+  <section id="panel-contracts" class="panel hidden">
+    <div class="card">
+      <h2>新建合同 <small>（勾选绑定：保哪几台设备、哪些备件免费换、保哪些软件）</small></h2>
+      <div class="inline-create">
+        <select id="cCustomer"></select>
+        <input id="cName" placeholder="合同名称" style="width:220px">
+        <input id="cStart" type="date"><input id="cEnd" type="date">
+        <input id="cAmount" type="number" step="0.01" min="0" placeholder="金额(元)" style="width:110px">
+        <span class="multi-hint">绑定设备（在保范围，多选）：<span id="bindEquip"></span></span>
+        <span class="multi-hint">免费更换备件（多选）：<span id="bindPart"></span></span>
+        <span class="multi-hint">绑定软件（多选）：<span id="bindSoft"></span></span>
+        <button class="btn btn-primary" onclick="saveContract()">保存合同</button>
+      </div>
+    </div>
+    <div class="card">
+      <h2>合同列表</h2>
+      <table id="contractTable">
+        <thead><tr><th>客户</th><th>合同</th><th>起止</th><th>绑定</th><th>金额</th><th>状态</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ═══ 发票（maint:invoice:list）═══ -->
+  <section id="panel-invoices" class="panel hidden">
+    <div class="card">
+      <h2>开票</h2>
+      <div class="inline-create">
+        <input id="iNo" placeholder="发票号 INV-2026-xxxx" style="width:170px">
+        <select id="iCustomer"></select>
+        <input id="iTitle" placeholder="开票项目" style="width:200px">
+        <input id="iAmount" type="number" step="0.01" min="0.01" placeholder="金额(元)" style="width:110px">
+        <input id="iTicket" type="number" placeholder="关联工单id(选填)" style="width:130px">
+        <button class="btn btn-primary" onclick="saveInvoice()">开票</button>
+      </div>
+    </div>
+    <div class="card">
+      <h2>发票列表</h2>
+      <table id="invoiceTable">
+        <thead><tr><th>发票号</th><th>客户</th><th>项目</th><th>金额</th><th>状态</th><th>开票日</th><th>回款日</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ═══ 看板（maint:dashboard:view）═══ -->
+  <section id="panel-dashboard" class="panel hidden">
+    <div id="dashCards" class="dash-cards"></div>
+    <div class="dash-grid">
+      <div class="card"><h2>工单状态分布</h2><div id="dashStatus"></div></div>
+      <div class="card"><h2>工程师工作量（未完结）</h2><table id="dashWorkload"><tbody></tbody></table></div>
+      <div class="card"><h2>⚠️ 低库存备件（动态阈值判定）</h2><table id="dashLowStock"><tbody></tbody></table></div>
+      <div class="card"><h2>⏰ 7天内到期合同</h2><table id="dashExpiring"><tbody></tbody></table></div>
+    </div>
+  </section>
+
+</main>
+
+<!-- 工单详情弹窗 -->
+<div id="modalMask" class="modal-mask hidden" onclick="if(event.target===this) closeModal()">
+  <div class="modal">
+    <div class="modal-head">
+      <h2 id="mTitle"></h2>
+      <button class="btn-close" onclick="closeModal()">✕</button>
+    </div>
+    <div id="mBody"></div>
+  </div>
+</div>
+
+<!-- 新增备件弹窗（管理端） -->
+<div id="partMask" class="modal-mask hidden" onclick="if(event.target===this) this.classList.add('hidden')">
+  <div class="modal" style="width:460px">
+    <div class="modal-head"><h2>新增备件</h2>
+      <button class="btn-close" onclick="document.getElementById('partMask').classList.add('hidden')">✕</button></div>
+    <div class="form-row"><label>名称</label><input id="pName"></div>
+    <div class="form-row"><label>分类</label>
+      <select id="pCategory"><option value="PART">配件</option><option value="COMPONENT">部件</option><option value="CONSUMABLE">耗材</option></select></div>
+    <div class="form-row"><label>适用设备</label><input id="pEquipType" placeholder="设备类型，留空=通用"></div>
+    <div class="form-row"><label>每台备货</label><input id="pPerDevice" type="number" value="1" min="0"></div>
+    <div class="form-row"><label>初始库存</label><input id="pStock" type="number" value="0" min="0"></div>
+    <div class="form-row"><label>人工阈值</label><input id="pThreshold" type="number" value="5" min="0"></div>
+    <div class="form-row"><label>单价</label><input id="pPrice" type="number" step="0.01" value="0"></div>
+    <button class="btn btn-primary" onclick="savePart()">保存</button>
+  </div>
+</div>
+
+<!-- 申请配件弹窗（工程师） -->
+<div id="requestMask" class="modal-mask hidden" onclick="if(event.target===this) this.classList.add('hidden')">
+  <div class="modal" style="width:440px">
+    <div class="modal-head"><h2>申请配件</h2>
+      <button class="btn-close" onclick="document.getElementById('requestMask').classList.add('hidden')">✕</button></div>
+    <div class="form-row"><label>备件</label><select id="rqPart"></select></div>
+    <div class="form-row"><label>数量</label><input id="rqQty" type="number" value="1" min="1"></div>
+    <div class="form-row"><label>理由</label><input id="rqReason" placeholder="如：库存不足 / 为工单#3备货"></div>
+    <button class="btn btn-primary" onclick="saveRequest()">提交申请</button>
+  </div>
+</div>
+
+<div id="toast" class="toast hidden"></div>
+
+<script src="js/app.js"></script>
+</body>
+</html>

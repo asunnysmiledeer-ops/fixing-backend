@@ -1,156 +1,59 @@
-# FIX-ING · 通用设备维保平台 — Demo v0 后端
+# FIX-ING · 通用设备维保平台
 
-> 开源、可配置的通用设备售后/维保管理 SaaS。平台不绑定行业：**医院 = 客户的一种，叫号机 = 设备的一种**。
-> 首个示范场景：医院叫号设备维保。
->
-> **当前版本 v0.3**：三种角色三套工作台 + 数据隔离 + 合同到期提醒。
-> 演示链：`客户报修(必传故障图/视频) → 管理员派单 → 工程师接单换件完工 → 客户确认`，全程可追溯。
+> 开源、可配置的通用设备售后/维保管理系统。平台不绑定行业：**医院 = 客户的一种，叫号机 = 设备的一种**。
+> 参考中州养老（若依）的架构思想，运行在现代技术栈上：Spring Boot 3.5 / Java 17 / MyBatis-Plus / MySQL / Redis。
 
-## 技术栈
+## 架构（Maven 多模块单体，对标 zzyl 模块边界）
 
-| 层 | 选型 | 说明 |
-|---|---|---|
-| 框架 | Spring Boot 3.5（单模块） | v0 故意不上若依/多模块，先把三层架构亲手过一遍 |
-| 持久层 | MyBatis-Plus 3.5 + MySQL | `map-underscore-to-camel-case` 必开 |
-| 认证 | JWT (jjwt) + BCrypt + 自写拦截器 | 刻意不上完整 Spring Security，整条鉴权链可读可懂 |
-| 前端 | 纯静态 HTML + 原生 JS | 放 `resources/static/`，Spring Boot 直接托管，同源零跨域零构建；v1 再换 Vue/React |
-| 构建 | Maven，Java 17+ | |
+```
+common ← system ← framework ← { maint-platform, admin }
 
-## 快速开始
+fixing-common          统一返回 Result / 业务异常 / BaseEntity(审计+租户+软删)
+fixing-system          用户与角色 / sys_role_perm 权限映射 / PermissionService
+fixing-framework       JWT / 鉴权拦截器 / @RequirePerm / Redis令牌黑名单 / 文件上传 / 全局异常
+fixing-maint-platform  全部维保业务：工单·台账·库存·合同·发票·看板（按业务分包）
+fixing-admin           启动类 + 系统级 Controller + 配置 + 苹果风轻端前端(static/)
+```
+
+## 核心能力
+
+- **五类工单**：硬件/软件维修（客户报修必传故障图/视频）+ 添加机器/移动机器/安装软件（服务申请），共用一套状态机：`待派单→已派单→处理中→待确认→已完成`（含改派/驳回/取消）
+- **合同颗粒化绑定**：合同精确绑定"保哪几台设备(contract_equipment)、哪些备件免费换(contract_part)、保哪些软件(contract_software)"；报修时点固化在保快照
+- **按次计费**：不在保工单完工自动生成结算单 = 上门费(标准可配) + 配件费(领料×单价快照，免费件剔除) + 维修费(工程师报价或默认)；可转开发票
+- **库存动态阈值**：预警阈值 = max(人工阈值, 每台备货数 × 在保签约设备数)，签约变化自动调整
+- **权限字符串化（RBAC）**：`@RequirePerm("maint:ticket:assign")` + sys_role_perm 表；前端页签由登录返回的 perms 驱动 —— **改权限=改数据库，不改代码**
+- **真实项目硬化**：全表审计四件套(自动填充)/tenant_id 预留/del_flag 软删除；Redis 令牌黑名单（登出真退出）；合同到期 7 天提醒(横幅+每日 9 点任务)；到期后报修不拦截、转按次收费
+
+## 快速开始（本机演示）
 
 ```bash
-# 1. 建库建表 + 灌演示数据（2客户/3设备/3备件/5用户/2合同/2发票）
-mysql -uroot -p < sql/schema.sql
-mysql -uroot -p < sql/seed.sql
-
-# 2. 改 src/main/resources/application.yml 里的数据库密码，然后启动
-mvn spring-boot:run
-
-# 3. 验证
-curl http://localhost:8080/ping   # → ok
-
-# 4. 打开网页前端：先登录（三个演示账号一键填入），再进看板/报修/库存/台账
-open http://localhost:8080/login.html
-
-# 5. 或者用脚本一键跑完整演示链（含反面用例）
-bash scripts/demo-flow.sh
+# 依赖：JDK 17+ / MySQL / Redis（brew services start mysql redis）
+mysql -uroot -p < sql/schema.sql && mysql -uroot -p < sql/seed.sql
+mvn -DskipTests package
+java -jar fixing-admin/target/fixing-admin-0.2.0.jar
+open http://localhost:8080/login.html     # 接口文档: /swagger-ui.html
 ```
 
-演示账号（seed 数据，密码均为 `123456`，库里存 BCrypt 散列）：
+演示账号（密码均 `123456`）：
 
-| 用户名 | 角色 | 说明 |
+| 账号 | 角色 | 数据故事线 |
 |---|---|---|
-| hospital_it | CUSTOMER | 市一医院信息科（合同 5 天后到期 → 演示到期横幅） |
-| clinic_it | CUSTOMER | 康泰诊所（另一家客户 → 演示数据隔离） |
-| admin | ADMIN | 平台管理员（Dashboard/派单/合同/发票） |
-| engineer_zh | ENGINEER | 张工·硬件工程师（接单/换件/完工） |
-| engineer_li | ENGINEER | 李工·软件工程师 |
+| hospital_it | 客户·市一医院 | 合同 5 天后到期(演示提醒)；合同只保叫号主机+打印头免费；**叫号屏未纳保→报修按次收费** |
+| clinic_it | 客户·康泰诊所 | 验证数据隔离（互相看不见工单） |
+| admin | 管理员 | 全部页签：看板/工单/库存/台账/合同/发票 |
+| engineer_zh / engineer_li | 工程师 | 只看自己的派单；换件自动判免费/计费 |
 
-## 三种角色 · 三套工作台（v0.3）
+## 技术要点（学习备注）
 
-登录角色不同，看到的是完全不同的系统（无关模块直接不渲染）：
-
-| 角色 | 工作台内容 |
-|---|---|
-| 🏥 客户 | **我要报修**（必须上传机器/软件异常的图片或视频）· **我的工单**进度 · 合同到期横幅/弹窗 |
-| 🔧 工程师 | **我的派单**（只看得到派给自己的）· 备件余量 + **低库存预警** · 我的领料记录 |
-| 🗂 管理员 | **数据 Dashboard**（状态分布/工程师工作量/低库存/到期合同/待回款）· 全部工单派单 · 库存 · 台账 · **合同** · **发票** |
-
-**数据隔离做在后端**（前端只是"少画页面"）：工程师调 `/tickets` 只返回自己的单、
-客户只返回自己单位的、跨单位查详情/报修直接拒绝 —— curl 绕过页面也一样。
-
-**合同到期（客户端）**：
-- 全部合同到期 → 登录即弹全屏"服务已到期"，报修接口硬拦截；
-- 7 天内到期 → 登录横幅倒计时提醒；每日 9:00 定时任务发提醒（Demo 为日志 mock）。
-
-## 认证（v0.2）
-
-`POST /auth/login {username, password}` → 返回 JWT；之后所有业务接口都要带
-`Authorization: Bearer <token>` 请求头，缺失/过期/伪造一律 401。
-
-- 操作人身份一律从令牌认定（请求体里没有 operatorId）——"我是谁"客户端说了不算
-- 密码只存 BCrypt 散列；登录失败不区分"用户名错还是密码错"
-- 鉴权链路：`AuthInterceptor`(验签+查用户) → `UserContext`(ThreadLocal) → Service 取操作人
-- JWT 密钥从环境变量 `JWT_SECRET` 注入（本地有开发默认值）
-
-## 工单状态机（系统的灵魂）
-
-```
-待派单 ──派单──▶ 已派单 ──接单──▶ 处理中 ──完工──▶ 待确认 ──确认──▶ 已完成
-  │               │ ▲                │ ▲               │
-  │               │ └───── 改派 ─────┘ └──── 驳回 ──────┘
-  └──取消──▶ 已取消 ◀──取消(管理员)──┘
-```
-
-- 合法跳转集中定义在 `TicketStatus.TRANSITIONS`，非法跳转一律拒绝（状态机就是工单的法律）。
-- 每次状态变更写一条 `ticket_log`（谁/何时/从哪到哪/为什么），审计与进度查询都靠它。
-- 换件只允许在"处理中"，扣库存用原子 SQL（`WHERE stock_qty >= qty`），与领料流水同事务。
-
-## API 一览
-
-| 方法 | 路径 | 谁能调 | 说明 |
-|---|---|---|---|
-| POST | `/auth/login` | 公开 | 登录换 JWT（唯一不需要令牌的业务接口） |
-| GET | `/auth/me` | 已登录 | 当前用户信息（前端刷新恢复登录态） |
-| POST | `/tickets` | 客户/管理员 | 提交报修（优先级由规则自动判定） |
-| GET | `/tickets/{id}` · `/tickets/{id}/logs` | 所有人 | 详情 / 流转时间线 |
-| GET | `/tickets?status=&priority=&engineerId=&customerId=` | 所有人 | 列表（按角色自动圈定可见范围） |
-| POST | `/files` | 已登录 | 上传故障图片/视频，返回 URL |
-| GET | `/spare-parts/low-stock` | 工程师/管理员 | 低库存预警清单 |
-| CRUD | `/contracts` · `/contracts/{id}/terminate` | 管理员 | 合同管理（到期提醒） |
-| CRUD | `/invoices` · `/invoices/{id}/mark-paid` | 管理员 | 发票开票与回款 |
-| GET | `/dashboard/summary` | 管理员 | 看板聚合指标 |
-| POST | `/tickets/{id}/assign` | 管理员 | 派单 `{engineerId}` |
-| POST | `/tickets/{id}/reassign` | 管理员 | 改派/超时重派 |
-| POST | `/tickets/{id}/accept` | 被派工程师 | 接单 |
-| POST | `/tickets/{id}/use-part` | 责任工程师 | 换件扣库存 `{partId, qty}` |
-| POST | `/tickets/{id}/complete` | 责任工程师 | 完工提交 |
-| POST | `/tickets/{id}/confirm` / `reject` | 客户 | 确认 / 驳回返工 |
-| POST | `/tickets/{id}/cancel` | 客户(仅待派单)/管理员 | 取消 |
-| CRUD | `/customers` `/equipments` `/spare-parts` | — | 台账与库存 |
-| GET | `/equipments/{id}/tickets` | — | 设备维修历史 |
-| GET | `/part-usages?ticketId=&engineerId=` | — | 领料流水 |
-
-统一响应：`{ "code": 0|1, "message": "...", "data": ... }`（0 成功，1 业务失败）。
-
-## 项目结构
-
-```
-com.fixing
- ├─ common/      统一返回 Result、业务异常、全局异常处理
- ├─ auth/        登录认证：JwtUtil / AuthInterceptor / UserContext / AuthController
- ├─ user/        用户与角色（一个 role 字段的简版 RBAC）
- ├─ customer/    客户台账（M2）
- ├─ equipment/   设备台账 + 维修历史（M2）
- ├─ inventory/   备件库存 + 领料流水（M8）：原子扣减 + 低库存预警
- ├─ contract/    合同（M3）：CRUD + 服务到期判定 + 每日到期提醒任务
- ├─ invoice/     发票（M9 应收）：开票 → 回款跟踪
- ├─ dashboard/   管理端看板聚合（M10 最小版）
- ├─ file/        文件上传（M12）：本地存储，上线换 OSS
- └─ ticket/      工单中心（M4 核心）：状态机 / 动作接口 / 流转日志
-     └─ priority/  PriorityDecider 接口 + 规则实现（将来换 AI，业务不改）
-
-resources/static/   网页前端（index.html + css + js，无框架）
- · 工单看板：六状态分列，状态分布一目了然（Demo 验收点）
- · 详情弹窗：流转时间线 + 按"身份×状态"显示动作按钮
- · 前端只是少画几个按钮 —— 权限与状态机的真校验全在后端
-```
-
-## 三条贯穿设计心法
-
-1. **抽象稳定核心**：`customer`/`equipment` 不写死 `hospital`/`叫号机`，换行业不改骨架。
-2. **给易变决策留一扇门**：优先级判定是 `PriorityDecider` 接口，v0 塞关键词规则，将来换 AI（M13）只加实现类。
-3. **想统计先记细**：每次领料记全"谁/哪张单/哪台设备/几个"，用量统计、成本核算都是顺手聚合。
+- 密码 BCrypt / JWT 无状态 + Redis 黑名单吊销 / ThreadLocal UserContext（afterCompletion 必清理）
+- 原子扣库存 `UPDATE ... WHERE stock_qty >= ?`（数据库就是锁，不需要分布式锁）
+- 金额三原则：BigDecimal / 单价存快照 / 在保判定报修时点固化
+- MyBatis-Plus：@TableLogic 软删、MetaObjectHandler 审计自动填充、JSON TypeHandler(autoResultMap)
+- 前端零构建：权限驱动页签 + 苹果风 design tokens（css/style.css 顶部，M2 的 Vue3 主题共用）
 
 ## 路线图
 
-- **v0.1**：工单全状态机 + 台账 + 换件扣库存 + 规则优先级 + 网页前端 ✅
-- **v0.2**：登录认证（JWT + BCrypt + 拦截器），操作人从登录态认定 ✅
-- **v0.3（当前）**：角色工作台 + 数据隔离 + 报修附件必传 + 低库存预警 + 合同到期提醒 + 发票 + Dashboard ✅
-- v0.4：SLA 超时标记与预警、通知 mock 落表；此后按计划迁移若依（完整 RBAC 菜单/字典配置/代码生成）
-- v1：可配置字典与自定义字段（M14）、Redis、迁移多模块
-- v2+：报表看板、账款、AI 接入（智能报修/派单建议）、多租户
-
-## 已知取舍（Demo 阶段故意不做）
-
-实体直接当响应返回 · 无分页 · 通知仅打日志 · 单租户 · JWT 无服务端吊销（登出=前端删令牌）。均在代码注释中标注了演进方向。
+- **M1（当前）**：多模块 + 权限字符串 + 五类工单 + 颗粒化合同/按次计费 + 动态阈值 + 苹果风轻端 ✅
+- M2：管理端 Vue3 + Element Plus（苹果风主题定制）
+- M3：sys_dict 字典配置（M14 第一步）/ 通知模板 / 操作日志 AOP / 分页规范
+- M4：部署加固（Docker/备份/限流）、多租户逻辑、微信/短信真实对接

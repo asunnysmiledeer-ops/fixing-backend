@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>登录 · FIX-ING</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🔧</text></svg>">
+<!-- 登录页：Apple ID 式的极简居中卡片。登录成功 → token 入 localStorage → index.html -->
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", sans-serif;
+    background: #f5f5f7;
+    min-height: 100vh; display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    -webkit-font-smoothing: antialiased;
+  }
+  .logo { font-size: 44px; margin-bottom: 6px; }
+  h1 { font-size: 26px; font-weight: 700; letter-spacing: -.02em; color: #1d1d1f; }
+  .slogan { color: #6e6e73; font-size: 14px; margin: 6px 0 34px; }
+  .login-card {
+    background: #fff; border-radius: 20px; padding: 34px 38px; width: 380px;
+    box-shadow: 0 1px 2px rgba(0,0,0,.04), 0 12px 40px rgba(0,0,0,.08);
+  }
+  label { display: block; font-size: 13px; color: #6e6e73; margin: 14px 0 6px; }
+  input {
+    width: 100%; padding: 12px 14px; border: 1px solid rgba(0,0,0,.12);
+    border-radius: 12px; font-size: 15px; font-family: inherit;
+    transition: border-color .2s ease, box-shadow .2s ease;
+  }
+  input:focus { outline: none; border-color: #0071e3; box-shadow: 0 0 0 3.5px rgba(0,113,227,.18); }
+  .btn-login {
+    width: 100%; margin-top: 24px; padding: 12px; border: none; border-radius: 980px;
+    background: #0071e3; color: #fff; font-size: 15px; font-weight: 600;
+    cursor: pointer; font-family: inherit; transition: all .2s ease;
+  }
+  .btn-login:hover { background: #0077ed; }
+  .btn-login:active { transform: scale(.98); }
+  .error { color: #ff3b30; font-size: 13px; margin-top: 12px; min-height: 18px; text-align: center; }
+  .demo-hint { margin-top: 26px; padding-top: 18px; border-top: 1px solid rgba(0,0,0,.08); }
+  .demo-hint p { font-size: 12px; color: #6e6e73; margin-bottom: 10px; text-align: center; }
+  .demo-accounts { display: flex; gap: 8px; }
+  .demo-accounts button {
+    flex: 1; padding: 9px 4px; font-size: 12.5px; border: 1px solid rgba(0,0,0,.1);
+    border-radius: 980px; background: #fff; cursor: pointer; font-family: inherit;
+    transition: all .2s ease;
+  }
+  .demo-accounts button:hover { background: rgba(0,0,0,.04); }
+  .foot { margin-top: 28px; font-size: 12px; color: #86868b; }
+</style>
+</head>
+<body>
+
+<div class="logo">🔧</div>
+<h1>FIX-ING</h1>
+<div class="slogan">通用设备维保平台</div>
+
+<div class="login-card">
+  <form id="loginForm">
+    <label>用户名</label>
+    <input id="username" autocomplete="username" required>
+    <label>密码</label>
+    <input id="password" type="password" autocomplete="current-password" required>
+    <button type="submit" class="btn-login">登 录</button>
+    <div class="error" id="errMsg"></div>
+  </form>
+  <div class="demo-hint">
+    <p>演示账号一键登录（密码均 123456）</p>
+    <div class="demo-accounts">
+      <button onclick="fill('hospital_it')">🏥 客户</button>
+      <button onclick="fill('admin')">🗂 管理员</button>
+      <button onclick="fill('engineer_zh')">🔧 工程师</button>
+    </div>
+  </div>
+</div>
+<div class="foot">FIX-ING · 让每一次维保都有据可查</div>
+
+<script>
+'use strict';
+function fill(username) {
+  document.getElementById('username').value = username;
+  document.getElementById('password').value = '123456';
+  document.getElementById('loginForm').requestSubmit();
+}
+document.getElementById('loginForm').onsubmit = async (ev) => {
+  ev.preventDefault();
+  const err = document.getElementById('errMsg');
+  err.textContent = '';
+  try {
+    const res = await fetch('/auth/login', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username: document.getElementById('username').value.trim(),
+        password: document.getElementById('password').value,
+      }),
+    });
+    const json = await res.json();
+    if (json.code !== 0) throw new Error(json.message);
+    localStorage.setItem('fixing_token', json.data.token);
+    location.href = '/index.html';
+  } catch (e) { err.textContent = e.message; }
+};
+</script>
+</body>
+</html>
