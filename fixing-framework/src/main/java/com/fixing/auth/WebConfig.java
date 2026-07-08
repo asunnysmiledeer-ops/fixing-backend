@@ -47,7 +47,7 @@ public class WebConfig implements WebMvcConfigurer {
                         "/auth/login",             // 登录接口本身（不然永远登不进来）
                         "/ping",                   // 健康检查
                         "/", "/index.html", "/login.html",  // 页面
-                        "/css/**", "/js/**",       // 静态资源
+                        "/css/**", "/js/**", "/assets/**",  // 静态资源（/assets 是 Vue 构建产物）
                         // 上传的图片/视频公开可读：<img>/<video> 标签带不了 Authorization 头。
                         // 文件名是 UUID（不可枚举），Demo 可接受；上线换 OSS 私有桶 + 签名 URL
                         "/files/**",

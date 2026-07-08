@@ -27,7 +27,7 @@
 
     <groupId>com.fixing</groupId>
     <artifactId>fixing</artifactId>
-    <version>0.2.0</version>
+    <version>0.3.0</version>
     <packaging>pom</packaging>
     <name>fixing</name>
     <description>FIX-ING 通用设备维保平台（多模块单体）</description>

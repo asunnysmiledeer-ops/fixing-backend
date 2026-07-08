@@ -1,15 +1,16 @@
 # FIX-ING Demo v0 · 应用配置
 server:
-  port: 8080
+  port: ${SERVER_PORT:8080}
 
 spring:
   application:
     name: fixing-backend
   data:
     redis:
-      # 本机 Redis：登出令牌黑名单 + 看板缓存（M1 只用这两处）
-      host: localhost
-      port: 6379
+      # Redis：令牌黑名单 + 看板缓存。地址/密码支持环境变量覆盖（部署到别的机器不用改包）
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
   servlet:
     multipart:
       # 报修可传故障视频，上限放宽到 100MB（默认 1MB 会直接 413）
@@ -17,8 +18,9 @@ spring:
       max-request-size: 100MB
   datasource:
     # 本地 MySQL；数据库名 fixing，建库建表脚本见 sql/schema.sql
-    url: jdbc:mysql://localhost:3306/fixing?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
-    username: root
+    # 整串 URL 或单独的密码都可用环境变量覆盖 —— "下载即部署"的关键
+    url: ${DB_URL:jdbc:mysql://localhost:3306/fixing?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai}
+    username: ${DB_USERNAME:root}
     # 密码从环境变量 DB_PASSWORD 读取，没设置时用默认值（仅限本机开发库）。
     # 原则：真实密码永远不硬编码进代码库 —— 公开仓库尤其如此
     password: ${DB_PASSWORD:1234}

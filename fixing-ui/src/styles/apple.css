@@ -1,0 +1,102 @@
+/* ============================================================
+   FIX-ING 苹果风 design tokens（M2 Vue 版）
+   覆盖 Element Plus 的 CSS 变量：主色/圆角/字体全局生效，
+   组件不用逐个改样式 —— 这就是"主题定制"而不是"刷漆"。
+   ============================================================ */
+:root {
+  --el-color-primary: #0071e3;
+  --el-color-primary-light-3: #3f92e9;
+  --el-color-primary-light-5: #73aeef;
+  --el-color-primary-light-7: #a6cbf5;
+  --el-color-primary-light-8: #c0d9f8;
+  --el-color-primary-light-9: #d9e8fb;
+  --el-color-primary-dark-2: #005bb6;
+  --el-color-success: #34c759;
+  --el-color-warning: #ff9500;
+  --el-color-danger: #ff3b30;
+  --el-color-error: #ff3b30;
+  --el-border-radius-base: 10px;
+  --el-border-radius-small: 8px;
+  --el-border-radius-round: 980px;
+  --el-font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Helvetica Neue", sans-serif;
+
+  /* 自有 tokens（与后端轻端 v0.2 保持同一套语言） */
+  --bg: #f5f5f7;
+  --surface: #ffffff;
+  --text: #1d1d1f;
+  --text-2: #6e6e73;
+  --separator: rgba(0, 0, 0, .08);
+  --shadow-card: 0 1px 2px rgba(0,0,0,.04), 0 8px 24px rgba(0,0,0,.06);
+  --shadow-float: 0 4px 12px rgba(0,0,0,.08), 0 16px 48px rgba(0,0,0,.12);
+  --glass: saturate(180%) blur(20px);
+}
+
+* { box-sizing: border-box; }
+html, body, #app { margin: 0; height: 100%; }
+body {
+  font-family: var(--el-font-family);
+  background: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  font-size: 14px;
+}
+
+/* 卡片：大圆角 + 浮起阴影（覆盖 el-card 默认） */
+.el-card { border: none !important; border-radius: 16px !important; box-shadow: var(--shadow-card) !important; }
+.el-card__header { border-bottom: 1px solid var(--separator) !important; font-weight: 700; }
+
+/* 按钮胶囊化 + 按下微缩 */
+.el-button { border-radius: 980px !important; transition: transform .15s ease; }
+.el-button:active { transform: scale(.97); }
+
+/* 弹窗/抽屉大圆角 */
+.el-dialog { border-radius: 18px !important; }
+.el-drawer { border-radius: 18px 0 0 18px; }
+.el-overlay { backdrop-filter: blur(6px); }
+
+/* 表格呼吸感 */
+.el-table { --el-table-border-color: var(--separator); font-size: 13.5px; }
+.el-table th.el-table__cell { background: transparent !important; color: var(--text-2); font-weight: 600; }
+.el-table .el-table__cell { padding: 11px 0; }
+
+/* 输入聚焦光环（苹果的蓝色 focus ring） */
+.el-input__wrapper.is-focus, .el-select__wrapper.is-focused {
+  box-shadow: 0 0 0 3.5px rgba(0,113,227,.18) !important;
+}
+
+/* 通用工具类 */
+.page { padding: 20px 28px 48px; max-width: 1280px; margin: 0 auto; }
+.muted { color: var(--text-2); font-size: 12.5px; font-weight: 400; }
+.mono { font-family: ui-monospace, SFMono-Regular, monospace; font-size: 12px; }
+.card-title { display: flex; justify-content: space-between; align-items: center; }
+
+/* 优先级徽章（沿用 v0.2 的语义色） */
+.badge { display: inline-block; padding: 1px 9px; border-radius: 980px; font-size: 11px; color: #fff; font-weight: 600; }
+.badge.P0 { background: #ff3b30; } .badge.P1 { background: #ff6961; }
+.badge.P2 { background: #ff9500; } .badge.P3 { background: #0071e3; } .badge.P4 { background: #8e8e93; }
+
+/* 看板 */
+.board { display: grid; grid-template-columns: repeat(6, 1fr); gap: 14px; }
+.board-col { background: rgba(0,0,0,.03); border-radius: 16px; padding: 12px; min-height: 220px; }
+.board-col h3 { font-size: 13px; margin: 0 0 12px; display: flex; justify-content: space-between; color: var(--text-2); }
+.col-count { background: rgba(0,0,0,.07); border-radius: 980px; padding: 0 9px; font-size: 12px; }
+.ticket-card {
+  background: var(--surface); border-radius: 10px; padding: 12px; margin-bottom: 10px; cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0,0,0,.06); border-left: 3px solid var(--separator);
+  transition: transform .2s ease, box-shadow .2s ease;
+}
+.ticket-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-float); }
+.ticket-no { font-size: 11px; color: var(--text-2); }
+.ticket-title { font-size: 13px; margin: 5px 0; font-weight: 500; }
+
+/* 在保状态卡 / 结算 / 时间线（工单详情） */
+.coverage-card { border-radius: 10px; padding: 12px 16px; margin-bottom: 14px; font-size: 13px; }
+.coverage-card.ok { background: rgba(52,199,89,.1); color: #248a3d; }
+.coverage-card.billable { background: rgba(255,149,0,.12); color: #c93400; }
+.charges { background: rgba(0,0,0,.03); border-radius: 10px; padding: 12px 16px; margin: 12px 0; font-size: 13px; }
+.charges .row { display: flex; justify-content: space-between; padding: 4px 0; }
+.charges .total { border-top: 1px solid var(--separator); margin-top: 6px; padding-top: 8px; font-weight: 700; }
+.ticket-photos { display: flex; flex-wrap: wrap; gap: 10px; margin: 10px 0; }
+.ticket-photos img, .ticket-photos video { width: 100px; height: 100px; object-fit: cover; border-radius: 10px; border: 1px solid var(--separator); }
+
+@media (max-width: 900px) { .board { grid-template-columns: repeat(6, 250px); overflow-x: auto; } }

@@ -14,3 +14,6 @@ target/
 
 # 上传的报修图片/视频（运行时数据，不进仓库）
 uploads/
+
+# 前端依赖与构建缓存
+node_modules/
