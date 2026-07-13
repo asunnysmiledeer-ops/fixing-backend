@@ -5,7 +5,7 @@
 
 > 📦 **想直接部署？** 看 [`docs/部署安装教程.md`](docs/部署安装教程.md)，或从 [Releases](../../releases) 下载 `fixing-vX.X-deploy.zip` 开箱即用（jar + SQL + 启动脚本）。
 
-## 架构（Maven 多模块单体，对标 zzyl 模块边界）
+## 架构（Maven 多模块单体）
 
 ```
 common ← system ← framework ← { maint-platform, admin }
